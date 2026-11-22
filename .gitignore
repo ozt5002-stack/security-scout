@@ -1,0 +1,15 @@
+# Secrets never go in git
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Scan output and third-party tools fetched at run time
+reports/raw/
+tools/
+.DS_Store
