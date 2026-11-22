@@ -63,10 +63,14 @@ November 2026**, when run on the three projects as they were *before* the fixes.
 How it is checked, by a script, not by eye:
 - `evals/known-findings.yaml` lists the 16 findings. For each: the project, the commit before the fix, the commit
   after it, the file it lives in, its OWASP 2025 category, and 1-3 keywords.
-- A known finding counts as **found** when one reported finding names the same file and contains one of its keywords.
+- A known finding counts as **found** when one reported finding names the same file (or, for something that is
+  missing, such as a header config, one of the listed files or folders) and contains one of its keywords. One reported
+  finding can match only one known finding.
 - The eval runs on the code only (no live site): the live sites are already fixed. Every one of the 16 can be seen in
   the code, including the two first found on the live sites (a `.gs` file inside the publish folder; no `_headers`).
 - One finding (the course password) sits on an unmerged branch, not `main`; its commits are listed like the rest.
+  Because of it, `fit-balance` has one *before* commit and two *after* commits, so the eval makes 7 runs: 3 before,
+  4 after. A false alarm is counted only on the *after* commit of that finding.
 
 **5 findings must always be found** (`must_pass`; the run fails without them, whatever the score): the unlimited
 password guesses (ad agents), the public `Code.gs` and the Sheet formula injection (fit-balance), the `javascript:`
@@ -103,7 +107,7 @@ CSP, the container running as root) are real trade-offs: reporting them is not a
 ## What the owner should know
 
 - **Cost:** the agent runs inside Claude Code on Oz's Claude plan. No API key and no extra bill. A run on a small
-  project takes a few minutes. The eval runs the agent 6 times (3 projects, before and after the fixes).
+  project takes a few minutes. The eval runs the agent 7 times (3 projects before the fixes, 4 runs after them).
 - **Installs:** Bandit and pip-audit through `pip`. Nikto is a Perl program (Perl is already installed) fetched from
   its official GitHub repo. A secret scanner like gitleaks is optional; `scout` has its own key-pattern search.
 - **Output:** one Markdown report per run, in `reports/`.
