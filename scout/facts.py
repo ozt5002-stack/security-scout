@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -44,10 +45,16 @@ class Fact:
             raise ValueError("file must use forward slashes, relative to the project root")
 
 
-def new_run_dir(project: Path, runs_root: Path | None = None) -> Path:
-    """runs/<project>-<timestamp>/ in this repo, outside the scanned project."""
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_dir = (runs_root or ROOT / "runs") / f"{project.resolve().name}-{stamp}"
+def runs_root() -> Path:
+    """runs/ in this repo. SCOUT_RUNS_DIR overrides it (tests use a temp folder)."""
+    override = os.environ.get("SCOUT_RUNS_DIR")
+    return Path(override) if override else ROOT / "runs"
+
+
+def new_run_dir(project: Path, root: Path | None = None) -> Path:
+    """runs/<project>-<timestamp>/, outside the scanned project. Microseconds keep two quick runs apart."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    run_dir = (root or runs_root()) / f"{project.resolve().name}-{stamp}"
     run_dir.mkdir(parents=True, exist_ok=False)
     return run_dir
 

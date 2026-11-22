@@ -23,12 +23,23 @@ def test_help_lists_the_options():
         assert opt in out
 
 
-def test_empty_project_writes_empty_facts_in_runs():
+def test_empty_project_writes_empty_facts_in_runs(runs_in_tmp):
     r = scout(str(EMPTY), "--no-agent")
     assert r.returncode == 0, r.stderr
     facts_path = Path(r.stdout.strip().split("-> ")[1])
-    assert facts_path.parent.parent == ROOT / "runs"
+    assert facts_path.parent.parent == runs_in_tmp
     assert json.loads(facts_path.read_text(encoding="utf-8")) == []
+
+
+def test_default_runs_folder_is_in_this_repo(monkeypatch):
+    from scout.facts import runs_root
+    monkeypatch.delenv("SCOUT_RUNS_DIR")
+    assert runs_root() == ROOT / "runs"
+
+
+def test_two_runs_in_the_same_second_do_not_collide():
+    from scout.facts import new_run_dir
+    assert new_run_dir(EMPTY) != new_run_dir(EMPTY)
 
 
 def test_live_host_not_in_allowlist_is_refused_with_exit_2(tmp_path):

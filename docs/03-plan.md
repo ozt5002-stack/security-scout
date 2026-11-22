@@ -83,7 +83,7 @@ as its first 4 characters; a test checks that the tool list in the agent file is
 green.
 
 ## 6. Evals on the three real projects
-- `evals/known-findings.yaml` (16 findings), `evals/projects.yaml` (local paths), `evals/run.py`: worktrees, 7 runs,
+- `evals/known-findings.yaml` (16 findings), `evals/projects.yaml` (local paths), `evals/run.py`: each commit written to a temp folder from git objects (D8), 7 runs,
   the matching rule, `evals/results/<date>/summary.md` with recall, must_pass and false alarms.
 - First run = baseline. Every prompt change after it: its own commit, an eval run before and after, both summaries
   committed.
@@ -92,7 +92,7 @@ green.
 
 **Done when:** the matching-rule tests pass in CI; the baseline summary is committed; the final run meets the design's metric (recall >= 13/16, all 5
 `must_pass` found, <= 2 false alarms) or the PR explains honestly where it falls short; the real project folders show
-no changes after the run (`git status` and `git worktree list` clean).
+no changes after the run (`git status` clean, no new worktrees or branches).
 
 ## 7. Nikto (optional)
 - `scout` never downloads anything (D7). With Oz's OK, recorded in the PR, Nikto is fetched once from

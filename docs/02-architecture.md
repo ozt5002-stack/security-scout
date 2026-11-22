@@ -142,10 +142,12 @@ in `tools/nikto` (gitignored), fetched once from github.com/sullo/nikto at a pin
 says how to get it and stops. Risk: Perl on Windows may fail on the Hebrew user-folder path or lack HTTPS support
 (Net::SSLeay); if so, the plan says to record it and keep Nikto as an optional extra.
 
-**D8. Evals on real history, code only.** The ground truth is the 16 findings of the manual review. Each run checks out
-one project at one commit in a temporary `git worktree` (nothing in the real folder changes) and runs `scout` without
-`--live`, with `--history head` and `--out` into `evals/results/<run>/<project>-<commit>.md`, so runs never overwrite
-each other. 7 runs: `fitbalance-ad-agents` before/after, `yahav-picks` before/after, `fit-balance` before (`28c63b3`,
+**D8. Evals on real history, code only.** The ground truth is the 16 findings of the manual review. Each run writes one
+project at one commit into a temporary folder by reading git's objects directly (`git ls-tree -r` lists the files,
+`git cat-file blob` writes each one; no checkout, see D10), so nothing in the real folder changes. It runs `scout`
+there without `--live`, with `--history head` (the commit's own history, given as a ref) and `--out` into
+`evals/results/<run>/<project>-<commit>.md`, so runs never overwrite each other. *(Changed in PR #15, Oz's decision:
+the first version used `git worktree add`, which can run a repo's filter drivers.)* 7 runs: `fitbalance-ad-agents` before/after, `yahav-picks` before/after, `fit-balance` before (`28c63b3`,
 the course branch, which still has every problem) and two afters (`e7f6922` for the site fixes on `main`, `f1d8a49` for
 the course password on its branch). The projects are local folders on Oz's computer, listed in `evals/projects.yaml`,
 because one of them is private.
@@ -156,8 +158,12 @@ private project).
 
 **D10. Scanning a hostile project must not run its code.** A project can carry its own git config, npm config and
 build scripts. So:
-- git runs as `git --no-pager -c core.fsmonitor=false -c core.hooksPath=<empty folder> -c core.quotepath=off` with
-  `log -p --no-textconv --no-ext-diff`, and `worktree add` uses the same empty hooks folder.
+- git runs as `git --no-pager -c core.fsmonitor=false -c core.hooksPath=<empty folder> -c core.quotepath=off
+  -c protocol.allow=never`, and `log -p` always adds `--no-textconv --no-ext-diff`.
+- **scout never runs a git command that touches a working tree** (`checkout`, `worktree add`, `status`, `diff`
+  against files, `stash`): those apply the repo's own filter drivers (`filter.<name>.smudge/clean/process`), which
+  are commands the repo chooses. It only reads objects: `log`, `ls-tree`, `cat-file`, `rev-parse`. Files of the
+  current version are read straight from disk. *(Added in PR #15 after review, Oz's decision.)*
 - `npm audit` runs with `--registry=https://registry.npmjs.org/` so a project `.npmrc` cannot redirect it; it reads
   the lockfile and installs nothing.
 - `pip-audit` gets `--no-deps --disable-pip` and a requirements file, never the project folder (that would build it).
