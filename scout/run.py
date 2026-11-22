@@ -26,7 +26,7 @@ from pathlib import Path
 DEFAULT_TIMEOUT = 120
 
 # git subcommands scout may run: they read objects and never apply filter drivers to a working tree.
-GIT_READ_ONLY = {"log", "ls-tree", "cat-file", "rev-parse", "rev-list"}
+GIT_READ_ONLY = {"log", "ls-tree", "ls-files", "cat-file", "rev-parse", "rev-list"}
 
 
 class ToolMissing(Exception):
