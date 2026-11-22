@@ -13,3 +13,6 @@ __pycache__/
 reports/raw/
 tools/
 .DS_Store
+
+# Per-run facts and raw tool output (outside the scanned project)
+runs/
