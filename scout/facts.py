@@ -1,0 +1,58 @@
+"""The fact shape (architecture, "Data shapes") and the run folder."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+
+from scout import ROOT
+
+SEVERITIES = ("critical", "high", "medium", "low", "info")
+OWASP_2025 = {
+    "A01": "Broken Access Control",
+    "A02": "Security Misconfiguration",
+    "A03": "Software Supply Chain Failures",
+    "A04": "Cryptographic Failures",
+    "A05": "Injection",
+    "A06": "Insecure Design",
+    "A07": "Authentication Failures",
+    "A08": "Software or Data Integrity Failures",
+    "A09": "Security Logging & Alerting Failures",
+    "A10": "Mishandling of Exceptional Conditions",
+}
+
+
+@dataclass(frozen=True)
+class Fact:
+    scanner: str
+    id: str
+    owasp: str
+    severity: str
+    evidence: str
+    file: str | None = None
+    line: int | None = None
+    url: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.severity not in SEVERITIES:
+            raise ValueError(f"severity must be one of {SEVERITIES}, got {self.severity!r}")
+        if self.owasp not in OWASP_2025:
+            raise ValueError(f"owasp must be an OWASP 2025 id (A01-A10), got {self.owasp!r}")
+        if self.file is not None and "\\" in self.file:
+            raise ValueError("file must use forward slashes, relative to the project root")
+
+
+def new_run_dir(project: Path, runs_root: Path | None = None) -> Path:
+    """runs/<project>-<timestamp>/ in this repo, outside the scanned project."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_dir = (runs_root or ROOT / "runs") / f"{project.resolve().name}-{stamp}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
+
+
+def write_facts(run_dir: Path, facts: list[Fact]) -> Path:
+    path = run_dir / "facts.json"
+    path.write_text(json.dumps([asdict(f) for f in facts], indent=2, ensure_ascii=False), encoding="utf-8")
+    return path

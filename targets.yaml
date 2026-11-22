@@ -1,0 +1,3 @@
+# Live hosts you own. `scout --live` and `--nikto` refuse every host that is not listed here (architecture D5).
+# Scanning a site you do not own can be illegal. Tests use their own list (--targets), never this file.
+hosts: []
