@@ -16,12 +16,13 @@ from scout.facts import Fact
 @dataclass(frozen=True)
 class Context:
     history: str = "all"  # "all" = every ref; "head" = only the checked-out commit and its ancestors (the eval)
+    run_dir: Path | None = None  # where scanners may write raw tool output (never the scanned project)
 
 
 Scanner = Callable[[Path, Context], list[Fact]]
 
 
 def code_scanners() -> list[tuple[str, Scanner]]:
-    from scout.scanners import ci, publish, secrets
+    from scout.scanners import bandit_scan, ci, deps, publish, secrets
 
-    return [(m.NAME, m.scan) for m in (secrets, publish, ci)]
+    return [(m.NAME, m.scan) for m in (secrets, publish, ci, deps, bandit_scan)]
