@@ -1,0 +1,84 @@
+name: nikto
+
+# Nikto runs here, on a GitHub (Linux) runner, because Windows Defender deletes it on Oz's computer
+# (architecture D7, Oz's decision in PR #21). It is started by hand (Actions -> nikto -> Run workflow), and once on a
+# pull request that changes this file or the Nikto scanner, so a change to it is tested.
+# Only hosts in targets.yaml are scanned (D5): the check runs before Nikto is fetched.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Site to scan (its host must be in targets.yaml)
+        required: true
+        default: https://picks.fit-balance.co.il/
+  pull_request:
+    paths:
+      - .github/workflows/nikto.yml
+      - scout/scanners/nikto.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nikto
+  cancel-in-progress: false
+
+env:
+  NIKTO_COMMIT: 312645d873478a77986627ab1fc8cffe595e85d4  # sullo/nikto, pinned
+  DEFAULT_TARGET: https://picks.fit-balance.co.il/
+
+jobs:
+  nikto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+
+      # The target comes from a form field: it is passed through an environment variable, never pasted into the
+      # script, so it cannot inject shell commands.
+      - name: Check the target against the allowlist
+        env:
+          TARGET: ${{ inputs.target || env.DEFAULT_TARGET }}
+        run: |
+          python -m scout.targets "$TARGET"
+          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      - name: Fetch Nikto at the pinned commit
+        run: |
+          git clone --quiet https://github.com/sullo/nikto.git nikto
+          git -C nikto -c advice.detachedHead=false checkout --quiet "$NIKTO_COMMIT"
+          sudo apt-get install -y -qq libnet-ssleay-perl libio-socket-ssl-perl > /dev/null
+          perl nikto/program/nikto.pl -Version | head -3
+
+      - name: Run Nikto (1 s pause between requests, 30 min limit)
+        run: |
+          python - <<'EOF'
+          import os, subprocess
+          from scout.scanners.nikto import command
+          cmd = command("nikto/program/nikto.pl", os.environ["TARGET"], "nikto.json")
+          print(" ".join(cmd[:3]), "...")
+          subprocess.run(cmd, check=False, timeout=40 * 60)
+          EOF
+          test -f nikto.json || echo "[]" > nikto.json
+
+      - name: Turn Nikto's output into facts
+        run: |
+          python -m scout.scanners.nikto parse nikto.json > facts.json
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          facts = json.load(open("facts.json", encoding="utf-8"))
+          print(f"## Nikto on {os.environ['TARGET']}: {len(facts)} items\n")
+          for f in facts:
+              print(f"- **{f['severity']}** {f['evidence']} ({f['url']})")
+          EOF
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nikto-report
+          path: |
+            nikto.json
+            facts.json

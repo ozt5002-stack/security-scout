@@ -95,14 +95,14 @@ green.
 no changes after the run (same HEAD, refs and worktree list; `git status` is never run, D10).
 
 ## 7. Nikto (optional)
-- `scout` never downloads anything (D7). With Oz's OK, recorded in the PR, Nikto is fetched once from
-  github.com/sullo/nikto at a commit named in the PR, into `tools/nikto`; the README says how to do the same.
-- `nikto` scanner: allowlisted host only, `-Pause 1`, timeout, JSON output turned into facts.
-- Before the first run against a live site, ask Oz again which site, since Nikto sends many requests.
+- Oz's OK to fetch Nikto: given in chat. Windows Defender deleted it on his computer, so (Oz's decision) it runs in
+  GitHub Actions instead: the `nikto` workflow, hand-started, allowlist checked first, Nikto at a pinned commit,
+  `-Pause 1`, 30-minute limit; its JSON is turned into facts by `scout/scanners/nikto.py` (D7).
+- First run: against picks.fit-balance.co.il (Oz's choice: GitHub Pages, no hosting credits), started by this PR.
 
-**Done when:** a run against the site Oz chose finishes and its findings appear in the report; a non-allowlisted host
-is refused (test); or, if Perl cannot run Nikto on this machine, that is recorded in the retrospective and `--nikto`
-says so clearly.
+**Done when:** the workflow run against picks finishes and its items appear as facts in the job summary and the
+artifact; a non-allowlisted host is refused before Nikto is fetched (`python -m scout.targets`, tested); tests cover
+the command and the parser; locally `--nikto` says where Nikto runs.
 
 ## 8. README, final audit, retrospective
 - README: what it is, install, usage, an example report, the safety rules, the eval result.
