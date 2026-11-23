@@ -1,6 +1,6 @@
 """The allowlist of live hosts the user owns (architecture D5, CONTRIBUTING rule 11).
 
-Task 1 version: reads the host list. Task 4 adds the live scanner that depends on it.
+The CLI calls check_url() before any scanner runs, so a refused host never receives a request (tests: test_live.py).
 """
 
 from __future__ import annotations

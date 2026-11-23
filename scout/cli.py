@@ -60,10 +60,13 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     run_dir = new_run_dir(project)
-    ctx = Context(history=args.history, run_dir=run_dir)
+    ctx = Context(history=args.history, run_dir=run_dir, live_url=args.live)
     facts = []
     for _name, scan in code_scanners():
         facts.extend(scan(project, ctx))
+    if args.live:
+        from scout.scanners import live
+        facts.extend(live.scan(project, ctx))
 
     facts_path = write_facts(run_dir, facts)
     print(f"scout: {len(facts)} facts -> {facts_path}")

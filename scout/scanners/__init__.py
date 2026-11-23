@@ -17,6 +17,7 @@ from scout.facts import Fact
 class Context:
     history: str = "all"  # "all" = every ref; "head" = only the checked-out commit and its ancestors (the eval)
     run_dir: Path | None = None  # where scanners may write raw tool output (never the scanned project)
+    live_url: str | None = None  # set only after the CLI checked the host against the allowlist
 
 
 Scanner = Callable[[Path, Context], list[Fact]]
