@@ -1,0 +1,92 @@
+name: nikto
+
+# Nikto runs here, on a GitHub (Linux) runner, because Windows Defender deletes it on Oz's computer
+# (architecture D7, Oz's decision in PR #21). It is started only by hand (Actions -> nikto -> Run workflow), by someone
+# with write access to this repo; no pull request can start it.
+# Only hosts in targets.yaml are scanned (D5): the check runs before Nikto is fetched, and Nikto receives only the URL
+# rebuilt by that check, never the raw input.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Site to scan (its host must be in targets.yaml)
+        required: true
+        default: https://picks.fit-balance.co.il/
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nikto
+  cancel-in-progress: false
+
+env:
+  NIKTO_COMMIT: 312645d873478a77986627ab1fc8cffe595e85d4  # sullo/nikto, pinned
+  DEFAULT_TARGET: https://picks.fit-balance.co.il/
+
+jobs:
+  nikto:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+
+      # The raw target comes from a form field: it reaches the script only through an environment variable (no
+      # command injection). The check refuses commas, spaces and control characters, and prints the URL rebuilt from
+      # its parsed parts; only that clean URL is passed on (a step output), so the raw value never reaches Nikto or
+      # $GITHUB_ENV.
+      - name: Check the target against the allowlist
+        id: target
+        shell: bash
+        env:
+          RAW_TARGET: ${{ inputs.target || env.DEFAULT_TARGET }}
+        run: |
+          url="$(python -m scout.targets "$RAW_TARGET")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "allowed: $url"
+
+      - name: Fetch Nikto at the pinned commit
+        shell: bash  # -eo pipefail: a failing command fails the step
+        run: |
+          git clone --quiet https://github.com/sullo/nikto.git nikto
+          git -C nikto -c advice.detachedHead=false checkout --quiet "$NIKTO_COMMIT"
+          sudo apt-get install -y -qq libnet-ssleay-perl libio-socket-ssl-perl libxml-writer-perl libjson-perl > /dev/null
+          perl nikto/program/nikto.pl -Version
+
+      - name: Run Nikto (1 s pause between requests, 30 min limit)
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+        run: |
+          python - <<'EOF'
+          import os, subprocess
+          from scout.scanners.nikto import command
+          cmd = command("nikto/program/nikto.pl", os.environ["TARGET"], "nikto.json")
+          print(" ".join(cmd[:3]), "...")
+          subprocess.run(cmd, check=False, timeout=40 * 60)
+          EOF
+          # No output means Nikto did not run: fail, never report "nothing found" for a scan that did not happen.
+          if [ ! -s nikto.json ]; then echo "::error::Nikto wrote no output"; exit 1; fi
+
+      - name: Turn Nikto's output into facts
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+        run: |
+          python -m scout.scanners.nikto parse nikto.json > facts.json
+          python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          facts = json.load(open("facts.json", encoding="utf-8"))
+          print(f"## Nikto on {os.environ['TARGET']}: {len(facts)} items\n")
+          for f in facts:
+              print(f"- **{f['severity']}** {f['evidence']} ({f['url']})")
+          EOF
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nikto-report
+          path: |
+            nikto.json
+            facts.json

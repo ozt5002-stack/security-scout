@@ -56,7 +56,8 @@ def main(argv: list[str] | None = None) -> int:
         if not args.live:
             print("scout: --nikto needs --live URL", file=sys.stderr)
             return 1
-        print("scout: --nikto is not available yet (plan task 7)", file=sys.stderr)
+        print("scout: Nikto runs in GitHub Actions, not on this computer (Windows Defender deletes it): "
+              "Actions -> nikto -> Run workflow, with this URL. See README.", file=sys.stderr)
         return 3
 
     run_dir = new_run_dir(project)
