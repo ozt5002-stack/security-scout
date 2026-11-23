@@ -52,11 +52,19 @@ def runs_root() -> Path:
 
 
 def new_run_dir(project: Path, root: Path | None = None) -> Path:
-    """runs/<project>-<timestamp>/, outside the scanned project. Microseconds keep two quick runs apart."""
+    """runs/<project>-<timestamp>/, outside the scanned project. The Windows clock can return the same time twice,
+    so a taken name gets a counter (-2, -3, ...) instead of failing."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    run_dir = (root or runs_root()) / f"{project.resolve().name}-{stamp}"
-    run_dir.mkdir(parents=True, exist_ok=False)
-    return run_dir
+    base = (root or runs_root()) / f"{project.resolve().name}-{stamp}"
+    base.parent.mkdir(parents=True, exist_ok=True)
+    for n in range(1, 1000):
+        run_dir = base if n == 1 else base.with_name(f"{base.name}-{n}")
+        try:
+            run_dir.mkdir(exist_ok=False)
+            return run_dir
+        except FileExistsError:
+            continue
+    raise FileExistsError(f"could not create a run folder next to {base}")
 
 
 def write_facts(run_dir: Path, facts: list[Fact]) -> Path:

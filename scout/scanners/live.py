@@ -14,13 +14,13 @@ import ssl
 import urllib.error
 import urllib.request
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urlsplit
 
 from scout import __version__
 from scout.facts import Fact
 from scout.scanners import Context
 from scout.scanners.files import walk
-from scout.scanners.publish import CSP_META, RISKY, SKIP, publish_folders
+from scout.scanners.publish import CSP_META, NOT_RISKY_NAMES, RISKY, SKIP, publish_folders
 
 NAME = "live"
 USER_AGENT = f"security-scout/{__version__} (owner-authorized security check)"
@@ -64,11 +64,12 @@ def connect_ipv4_first(address, timeout=None, source_address=None, *args, **kwar
     for family, kind, proto, _name, sockaddr in infos:
         sock = socket.socket(family, kind, proto)
         try:
-            sock.settimeout(min(timeout or CONNECT_TIMEOUT, CONNECT_TIMEOUT))
+            read_timeout = timeout if isinstance(timeout, (int, float)) and timeout > 0 else TIMEOUT
+            sock.settimeout(min(read_timeout, CONNECT_TIMEOUT))
             if source_address:
                 sock.bind(source_address)
             sock.connect(sockaddr)
-            sock.settimeout(timeout)
+            sock.settimeout(read_timeout)  # never block forever, whatever the caller passed
             return sock
         except OSError as e:
             last_error = e
@@ -104,26 +105,34 @@ def _opener(host: str):
 
 
 def _request(opener, url: str, method: str):
+    """(status, headers, body, final URL). The body is read (up to 200 KB) for GET only."""
     req = urllib.request.Request(url, method=method, headers={"User-Agent": USER_AGENT})
     try:
         with opener.open(req, timeout=TIMEOUT) as r:
-            return r.status, {k.lower(): v for k, v in r.headers.items()}, r.read(200_000) if method == "GET" else b""
+            body = r.read(200_000) if method == "GET" else b""
+            return r.status, {k.lower(): v for k, v in r.headers.items()}, body, r.geturl()
     except urllib.error.HTTPError as e:
-        return e.code, {k.lower(): v for k, v in e.headers.items()}, b""
+        return e.code, {k.lower(): v for k, v in e.headers.items()}, b"", e.geturl() or url
 
 
 def _missing_headers(headers: dict[str, str], https: bool) -> list[str]:
+    """Header names that are absent or empty. Values joined by commas (a header sent twice) still count."""
     missing = []
+    csp = headers.get("content-security-policy", "")
     for name in HEADERS:
         if name == "strict-transport-security" and not https:
             continue
-        if name == "x-frame-options" and "frame-ancestors" in headers.get("content-security-policy", ""):
+        if name == "x-frame-options" and "frame-ancestors" in csp:
             continue
-        if name not in headers:
+        if not headers.get(name, "").strip():
             missing.append(name)
-    if headers.get("x-content-type-options", "").strip().lower() not in ("", "nosniff"):
+    nosniff = headers.get("x-content-type-options", "")
+    if nosniff.strip() and {v.strip().lower() for v in nosniff.split(",")} != {"nosniff"}:
         missing.append("x-content-type-options")
     return missing
+
+
+MAX_PATHS = 60  # a project served from its root could list hundreds of files; keep the check small and polite
 
 
 def candidate_paths(project: Path | None) -> dict[str, str]:
@@ -134,10 +143,12 @@ def candidate_paths(project: Path | None) -> dict[str, str]:
         project = project.resolve()
         for folder in publish_folders(project):
             for p in walk(folder, SKIP):
+                if p.name in NOT_RISKY_NAMES:
+                    continue
                 suffix = ".env" if p.name.startswith(".env") else p.suffix.lower()
                 if suffix in RISKY:
                     paths.setdefault("/" + p.relative_to(folder).as_posix(), RISKY[suffix])
-    return paths
+    return dict(list(paths.items())[:MAX_PATHS])
 
 
 def scan_url(url: str, project: Path | None = None) -> list[Fact]:
@@ -148,11 +159,17 @@ def scan_url(url: str, project: Path | None = None) -> list[Fact]:
     facts: list[Fact] = []
 
     try:
-        status, headers, home = _request(opener, base, "GET")
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        status, headers, home, final = _request(opener, base, "GET")
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
         return [Fact(NAME, "live.unreachable", "A02", "info", f"not checked: {base} did not answer ({e})", url=base)]
 
-    missing = _missing_headers(headers, parts.scheme == "https")
+    # Judge the page the site really served: http://x/ that redirects to https://x/ is an https site.
+    final_parts = urlsplit(final)
+    https = final_parts.scheme == "https"
+    if final_parts.scheme in ("http", "https") and final_parts.hostname == host:
+        base = f"{final_parts.scheme}://{final_parts.netloc}/"
+
+    missing = _missing_headers(headers, https)
     note = ""
     if "content-security-policy" in missing and CSP_META.search(home.decode("utf-8", errors="replace")):
         missing.remove("content-security-policy")  # hosts like GitHub Pages cannot send headers; a meta CSP counts
@@ -163,17 +180,22 @@ def scan_url(url: str, project: Path | None = None) -> list[Fact]:
                           f"{base} (HTTP {status}) does not send: "
                           f"{', '.join(HEADERS[m].split(' (')[0] for m in missing)}.{note}",
                           url=base))
-    if parts.scheme == "http":
-        facts.append(Fact(NAME, "live.plain-http", "A04", "medium", f"{base} was checked over plain HTTP", url=base))
+    if not https:
+        facts.append(Fact(NAME, "live.plain-http", "A04", "medium",
+                          f"{base} is served over plain HTTP (no redirect to HTTPS)", url=base))
 
     for path, severity in candidate_paths(project).items():
-        target = urljoin(base, path.lstrip("/"))
+        # File names come from the scanned project: quote them, so spaces, Hebrew letters, '#' or '?' stay one path
+        # on this host (a hostile name can never turn into another host or a query).
+        target = base + quote(path.lstrip("/"), safe="/")
         try:
-            code, h, _ = _request(opener, target, "HEAD")
-        except (urllib.error.URLError, TimeoutError, OSError):
+            code, h, _, _ = _request(opener, target, "HEAD")
+            if code == 405:  # some servers refuse HEAD: ask with GET (only the first 200 KB are read)
+                code, h, _, _ = _request(opener, target, "GET")
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             continue
         # Many static hosts answer every path with the home page (200, text/html); that is not an exposed file.
-        if code == 200 and not h.get("content-type", "").startswith("text/html"):
+        if code == 200 and not h.get("content-type", "").lower().startswith("text/html"):
             facts.append(Fact(NAME, "live.exposed-file", "A02", severity,
                               f"{target} answers 200 ({h.get('content-type', 'no content-type')}): anyone can download it",
                               url=target))

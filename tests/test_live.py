@@ -117,11 +117,68 @@ def test_allowed_host_runs_the_live_scan_through_the_cli(site, tmp_path, runs_in
     assert ("GET", "/") in reqs
 
 
-def test_redirect_to_another_host_is_not_followed(site):
-    url, reqs = site({"Location": "http://evil.test/"})
-    # the home page itself answers 200 here; check the handler directly
-    handler = live.SameHostRedirects("127.0.0.1")
-    assert handler.redirect_request(None, None, 302, "Found", {}, "http://evil.test/") is None
+def test_redirect_to_another_host_sends_it_nothing(site):
+    """End to end: 127.0.0.1 redirects to localhost (another host name, so not allowlisted): localhost gets 0 requests."""
+    other_url, other_reqs = site(ALL_HEADERS)
+    other_port = other_url.rsplit(":", 1)[1].strip("/")
+    redirecting = make_redirect_server(f"http://localhost:{other_port}/")
+    try:
+        live.scan_url(f"http://127.0.0.1:{redirecting.server_address[1]}/")
+    finally:
+        redirecting.shutdown()
+    assert other_reqs == []
+
+
+def make_redirect_server(location: str):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.end_headers()
+
+        do_HEAD = do_GET
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def test_file_names_with_spaces_hebrew_and_hash_stay_on_the_host(site, tmp_path):
+    project = tmp_path / "proj"
+    (project / "site").mkdir(parents=True)
+    (project / "site" / "index.html").write_text("<p>x</p>", encoding="utf-8")
+    for name in ("my notes.md", "גיבוי.sql", "a#b.env"):
+        (project / "site" / name).write_text("x", encoding="utf-8")
+    url, reqs = site(ALL_HEADERS, files={"/%D7%92%D7%99%D7%91%D7%95%D7%99.sql": "application/sql"})
+    facts = live.scan_url(url, project)  # must not crash
+    heads = {p for m, p in reqs if m == "HEAD"}
+    assert {"/my%20notes.md", "/%D7%92%D7%99%D7%91%D7%95%D7%99.sql", "/a%23b.env"} <= heads
+    assert [f.id for f in facts if f.id == "live.exposed-file"] == ["live.exposed-file"]
+
+
+def test_empty_header_is_missing_and_a_repeated_nosniff_is_fine():
+    assert live._missing_headers({"content-security-policy": " "}, False)[0] == "content-security-policy"
+    h = {k.lower(): v for k, v in ALL_HEADERS.items()} | {"x-content-type-options": "nosniff, nosniff"}
+    assert live._missing_headers(h, True) == []
+
+
+def test_content_type_case_and_head_refused_with_405(site, monkeypatch):
+    url, _ = site(ALL_HEADERS, files={"/.env": "Text/HTML"})
+    assert not [f for f in live.scan_url(url) if f.id == "live.exposed-file"]  # Text/HTML is still html
+    calls = []
+    real = live._request
+
+    def head_refused(opener, u, method):
+        calls.append(method)
+        if u.endswith("/.env"):
+            return (405, {}, b"", u) if method == "HEAD" else (200, {"content-type": "text/plain"}, b"K=1", u)
+        return real(opener, u, method)
+
+    monkeypatch.setattr(live, "_request", head_refused)
+    assert [f.url for f in live.scan_url(url) if f.id == "live.exposed-file"] == [url + ".env"]
 
 
 def test_a_meta_csp_counts_when_the_host_cannot_send_headers(site):
@@ -130,10 +187,10 @@ def test_a_meta_csp_counts_when_the_host_cannot_send_headers(site):
     real = L._request
 
     def with_meta(opener, u, method):
-        code, h, body = real(opener, u, method)
+        code, h, body, final = real(opener, u, method)
         if method == "GET":
             body = b'<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">'
-        return code, h, body
+        return code, h, body, final
 
     try:
         L._request = with_meta
