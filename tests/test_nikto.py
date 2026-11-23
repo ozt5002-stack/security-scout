@@ -62,3 +62,11 @@ def test_targets_cli(capsys):
     from scout.targets import main
     assert main(["https://picks.fit-balance.co.il/"]) == 0
     assert main(["https://example.com/"]) == 2
+
+
+def test_the_workflow_fails_when_nikto_writes_no_output():
+    """The first run 'succeeded' with an empty result while Nikto had stopped on a missing Perl module."""
+    wf = (ROOT / ".github" / "workflows" / "nikto.yml").read_text(encoding="utf-8")
+    assert 'echo "[]" > nikto.json' not in wf
+    assert "Nikto wrote no output" in wf and "exit 1" in wf
+    assert "libxml-writer-perl" in wf

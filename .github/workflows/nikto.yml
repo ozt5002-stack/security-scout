@@ -48,11 +48,12 @@ jobs:
           echo "TARGET=$TARGET" >> "$GITHUB_ENV"
 
       - name: Fetch Nikto at the pinned commit
+        shell: bash  # -eo pipefail: a failing command fails the step
         run: |
           git clone --quiet https://github.com/sullo/nikto.git nikto
           git -C nikto -c advice.detachedHead=false checkout --quiet "$NIKTO_COMMIT"
-          sudo apt-get install -y -qq libnet-ssleay-perl libio-socket-ssl-perl > /dev/null
-          perl nikto/program/nikto.pl -Version | head -3
+          sudo apt-get install -y -qq libnet-ssleay-perl libio-socket-ssl-perl libxml-writer-perl libjson-perl > /dev/null
+          perl nikto/program/nikto.pl -Version
 
       - name: Run Nikto (1 s pause between requests, 30 min limit)
         run: |
@@ -63,7 +64,8 @@ jobs:
           print(" ".join(cmd[:3]), "...")
           subprocess.run(cmd, check=False, timeout=40 * 60)
           EOF
-          test -f nikto.json || echo "[]" > nikto.json
+          # No output means Nikto did not run: fail, never report "nothing found" for a scan that did not happen.
+          if [ ! -s nikto.json ]; then echo "::error::Nikto wrote no output"; exit 1; fi
 
       - name: Turn Nikto's output into facts
         run: |
