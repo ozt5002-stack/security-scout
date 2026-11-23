@@ -21,8 +21,8 @@ why. Every decision has a number (D1...) so code, reviews and the retrospective 
 | Scanner | Looks at | Finds (OWASP 2025) | Runs when |
 |---|---|---|---|
 | `secrets` | every file + the git history (`--all` normally, `HEAD` only in the eval) | keys and passwords in code or history (A04/A07). Shows the first 4 characters only. A key in a file git does not track (a local `.env`) is an `info` fact for the inventory, not a problem *(PR #16, Oz's decision)* | always |
-| `deps` | `package-lock.json`, `requirements*.txt` | known-vulnerable packages via `npm audit --json` and `pip-audit -r <file> --no-deps --disable-pip` (A03) | the file exists |
-| `bandit` | `*.py` | risky Python patterns via Bandit, with `--ignore-nosec` (A05 and others) | Python files exist |
+| `deps` | `package-lock.json`, `requirements*.txt` | known-vulnerable packages via `npm audit --json` (in a clean temp copy of `package.json` + `package-lock.json`) and `pip-audit -r <file> --no-deps --disable-pip`; editable and URL lines are listed as not checked (A03) | the file exists |
+| `bandit` | `*.py` | risky Python patterns via Bandit, with `--ignore-nosec` and `--ini <our empty file>`; test folders are scanned too (A05 and others) | Python files exist |
 | `publish` | every folder that holds an `index.html` (except `node_modules`, `.git`, tests), plus a `netlify.toml` publish folder | non-web files inside it: `.gs .py .sh .sql .env .md .key .pem .bak` and similar (A02); no header config for it: no `_headers`, no `[[headers]]` in `netlify.toml`, no CSP meta in its HTML (A02) | such a folder exists |
 | `ci` | `.github/workflows/*.yml` | write permissions at workflow level, no top-level `permissions:` at all, actions pinned to a tag instead of a commit (A01/A08) | workflows exist |
 | `live` | `GET /` and a `HEAD` for a short path list on an allowed host | missing or weak security headers; paths that should not answer 200: `/.env`, `/.git/config`, and every non-web file `publish` found, mapped to its URL (A02) | `--live` and the host is in `targets.yaml` |
@@ -166,11 +166,16 @@ build scripts. So:
   against files, `stash`): those apply the repo's own filter drivers (`filter.<name>.smudge/clean/process`), which
   are commands the repo chooses. It only reads objects or the index: `log`, `ls-tree`, `ls-files`, `cat-file`, `rev-parse`, `rev-list`. Files of the
   current version are read straight from disk. *(Added in PR #15 after review, Oz's decision.)*
-- `npm audit` runs with `--registry=https://registry.npmjs.org/` so a project `.npmrc` cannot redirect it; it reads
-  the lockfile and installs nothing.
+- `npm audit` runs in a fresh temp folder that holds only copies of `package.json` and `package-lock.json`, with
+  `--registry=https://registry.npmjs.org/`. npm reads `.npmrc` from the folder it runs in, and a project `.npmrc` can
+  point npm at the project's own code (`prefix=`), a proxy or another cache; in the copy there is none. It reads the
+  lockfile and installs nothing. *(Changed in PR #17 after review, Oz's decision: the first version ran npm inside
+  the project folder.)*
+- Bandit gets `--ini <an empty file scout owns>`, so a project `.bandit` cannot skip tests. *(Added in PR #17, Oz's
+  decision.)*
 - `pip-audit` gets `--no-deps --disable-pip` and a requirements file, never the project folder (that would build it).
 - Symlinks are not followed.
 - Every program is called with a list of arguments, never through a shell string, with a timeout.
 
-**D11. Windows details.** `npm` is called as `npm.cmd`; `PYTHONUTF8=1` is set for every child process; all paths are
+**D11. Windows details.** `npm` is found as `npm.cmd` (PATHEXT) and only ever runs in the clean temp copy (D10); `PYTHONUTF8=1` is set for every child process; all paths are
 handled as `pathlib.Path`, so the Hebrew user-folder name works.

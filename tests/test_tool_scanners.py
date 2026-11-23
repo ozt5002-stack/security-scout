@@ -114,3 +114,75 @@ def test_no_python_files_means_bandit_does_not_run(tmp_path, monkeypatch):
 ])
 def test_bandit_owasp_mapping(test_id, owasp):
     assert bandit_scan.owasp_for(test_id) == owasp
+
+
+# --- review of PR #17: hostile project config must not steer the tools (D4, D10) ---
+
+def test_npm_runs_in_a_clean_copy_without_the_projects_npmrc(tmp_path, monkeypatch):
+    (tmp_path / ".npmrc").write_text("prefix=./evil\nhttps-proxy=http://127.0.0.1:9\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"name": "x"}', encoding="utf-8")
+    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
+    seen = {}
+
+    def fake_run(args, cwd=None, timeout=0):
+        seen["cwd"] = Path(cwd)
+        seen["files"] = sorted(p.name for p in Path(cwd).iterdir())
+        return subprocess.CompletedProcess(args, 1, stdout=(DATA / "npm-audit-sharp.json").read_text(encoding="utf-8"),
+                                           stderr="")
+
+    monkeypatch.setattr(deps, "run", fake_run)
+    facts = deps.scan(tmp_path, Context())
+    assert seen["files"] == ["package-lock.json", "package.json"]  # no .npmrc
+    assert tmp_path not in seen["cwd"].parents and seen["cwd"] != tmp_path
+    assert not seen["cwd"].exists()  # the copy is removed afterwards
+    assert [f.file for f in facts] == ["package-lock.json"]
+
+
+@pytest.mark.skipif(not _has_bandit(), reason="bandit not installed")
+def test_a_projects_bandit_file_cannot_skip_checks(tmp_path):
+    (tmp_path / ".bandit").write_text("[bandit]\nskips: B307\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = eval(input())\n", encoding="utf-8")
+    assert [f.id for f in bandit_scan.scan(tmp_path, Context())] == ["bandit.B307"]
+
+
+@pytest.mark.skipif(not _has_bandit(), reason="bandit not installed")
+def test_code_under_tests_is_scanned_too(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "helper.py").write_text("x = eval(input())\n", encoding="utf-8")
+    assert [f.file for f in bandit_scan.scan(tmp_path, Context())] == ["tests/helper.py"]
+
+
+def test_two_requirements_files_with_the_same_name_never_mix(tmp_path, monkeypatch):
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "requirements.txt").write_text("requests==2.19.0\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    calls = []
+
+    def fake_run(args, cwd=None, timeout=0):
+        calls.append(args)
+        if len(calls) == 1:  # the first file succeeds, the second fails without output
+            Path(args[args.index("-o") + 1]).write_text(
+                (DATA / "pip-audit-requests.json").read_text(encoding="utf-8"), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(deps, "run", fake_run)
+    facts = deps.scan(tmp_path, Context(run_dir=run_dir))
+    assert [(f.file, f.id) for f in facts] == [("a/requirements.txt", "deps.pip-advisory"),
+                                              ("b/requirements.txt", "deps.pip-audit-not-checked")]
+
+
+def test_editable_and_url_lines_are_reported_as_not_checked(tmp_path, monkeypatch):
+    (tmp_path / "requirements.txt").write_text(
+        "-e .\nfoo @ https://example.test/foo.whl\ngit+https://example.test/bar.git\nrequests==2.19.0\n",
+        encoding="utf-8")
+
+    def fake_run(args, cwd=None, timeout=0):
+        Path(args[args.index("-o") + 1]).write_text(
+            (DATA / "pip-audit-requests.json").read_text(encoding="utf-8"), encoding="utf-8")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+
+    monkeypatch.setattr(deps, "run", fake_run)
+    ids = [f.id for f in deps.scan(tmp_path, Context(run_dir=tmp_path))]
+    assert ids.count("deps.pip-audit-not-checked") == 3 and ids.count("deps.pip-advisory") == 1
