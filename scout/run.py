@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from functools import lru_cache
 from pathlib import Path
@@ -55,8 +56,9 @@ def git_safe_options() -> list[str]:
 
 
 def find(name: str) -> str:
-    """Full path of a program. On Windows this also finds `npm.cmd` for `npm` (PATHEXT)."""
-    path = shutil.which(name)
+    """Full path of a program: on PATH (on Windows also `npm.cmd` for `npm`), or next to this Python (a venv's
+    Scripts/bin folder, where pip puts bandit and pip-audit)."""
+    path = shutil.which(name) or shutil.which(name, path=str(Path(sys.executable).parent))
     if not path:
         raise ToolMissing(name)
     return path

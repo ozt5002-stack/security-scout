@@ -1,2 +1,5 @@
 -r requirements.txt
 pytest==8.3.3
+# scanners that run outside tools (task 3); CI installs them so the Bandit test is real
+bandit==1.7.10
+pip-audit==2.7.3

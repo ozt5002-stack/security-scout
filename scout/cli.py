@@ -59,12 +59,12 @@ def main(argv: list[str] | None = None) -> int:
         print("scout: --nikto is not available yet (plan task 7)", file=sys.stderr)
         return 3
 
-    ctx = Context(history=args.history)
+    run_dir = new_run_dir(project)
+    ctx = Context(history=args.history, run_dir=run_dir)
     facts = []
     for _name, scan in code_scanners():
         facts.extend(scan(project, ctx))
 
-    run_dir = new_run_dir(project)
     facts_path = write_facts(run_dir, facts)
     print(f"scout: {len(facts)} facts -> {facts_path}")
 
