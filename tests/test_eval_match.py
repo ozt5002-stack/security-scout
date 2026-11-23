@@ -70,3 +70,35 @@ def test_seven_runs_planned():
     runs = planned_runs([Known.from_dict(d) for d in data])
     assert len(runs) == 7
     assert sum(1 for r in runs if r[2] == "before") == 3
+
+
+# --- review of PR #20 ---
+
+def test_keywords_match_whole_words_only():
+    from evals.match import keyword_in
+    assert keyword_in("content-type", "POST accepted with any Content-Type")
+    assert not keyword_in("content-type", "missing X-Content-Type-Options: nosniff")
+    assert not keyword_in("sha", "shared hosting")
+    assert keyword_in("javascript:", 'href="javascript:alert(1)"')
+    assert keyword_in("@v4", "actions/checkout@v4 is a tag")
+
+
+def test_a_failed_run_never_passes_the_metric():
+    from evals.run import metric_met
+    perfect = {"recall": 16, "must_pass_missed": [], "false_alarms": []}
+    ok_runs = [RunResult("p", f"c{i}", "before", []) for i in range(7)]
+    assert metric_met(perfect, ok_runs)
+    assert not metric_met(perfect, ok_runs[:6] + [RunResult("p", "x", "after", [], "no report")])
+    assert not metric_met(perfect, ok_runs[:6])  # a run is missing
+
+
+def test_tree_names_cannot_escape_the_folder(tmp_path):
+    from evals.run import safe_target
+    assert safe_target(tmp_path, "src/a.js") == (tmp_path / "src" / "a.js").resolve()
+    for bad in ("../x", "a/../../x", ".git/config", "a/.GIT/hooks/x", "C:x", "a/b:stream", r"\abs\x", "git~1/x"):
+        assert safe_target(tmp_path, bad) is None, bad
+
+
+def test_the_runner_never_uses_git_status():
+    src = (ROOT / "evals" / "run.py").read_text(encoding="utf-8")
+    assert '"status"' not in src

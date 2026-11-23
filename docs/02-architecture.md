@@ -104,10 +104,12 @@ the first version allowed one path and put the others in Evidence, where the eva
 
 ### Matching rule (the eval)
 
-1. Both paths are normalised before comparing: forward slashes, lower case, the worktree prefix removed, short
-   Windows names (`E40C~1`) expanded.
+1. Both paths are normalised before comparing: forward slashes, lower case, a leading `./` or `/` and a line number
+   (`:12`, `:12:5`, `#L12`) removed. Reports give paths relative to the project, so no folder prefix needs removing.
+   *(Corrected in PR #20, Oz's decision: the first text promised short-name handling the code never needed.)*
 2. A known finding is **found** when any path in a reported finding's `Where` matches one of its `files` (or is
-   inside a listed folder) and the finding's text contains one of its `keywords` (case-insensitive).
+   inside a listed folder) and the finding's text contains one of its `keywords` as a whole word (case-insensitive;
+   not inside a longer or hyphenated word, so `content-type` does not match `x-content-type-options`).
 3. Each reported finding can be matched to at most one known finding.
 4. On an *after* run, a known finding whose `after` is that commit and that still matches is a **false alarm**.
 
@@ -156,12 +158,16 @@ says how to get it and stops. Risk: Perl on Windows may fail on the Hebrew user-
 **D8. Evals on real history, code only.** The ground truth is the 16 findings of the manual review. Each run writes one
 project at one commit into a temporary folder by reading git's objects directly (`git ls-tree -r` lists the files,
 `git cat-file blob` writes each one; no checkout, see D10), so nothing in the real folder changes. It runs `scout`
-there without `--live`, with `--history head` (the commit's own history, given as a ref) and `--out` into
+there without `--live`, with `--history head` and `--out` into
 `evals/results/<run>/<project>-<commit>.md`, so runs never overwrite each other. *(Changed in PR #15, Oz's decision:
 the first version used `git worktree add`, which can run a repo's filter drivers.)* 7 runs: `fitbalance-ad-agents` before/after, `yahav-picks` before/after, `fit-balance` before (`28c63b3`,
 the course branch, which still has every problem) and two afters (`e7f6922` for the site fixes on `main`, `f1d8a49` for
 the course password on its branch). The projects are local folders on Oz's computer, listed in `evals/projects.yaml`,
 because one of them is private.
+The eval does **not** scan git history: each commit is written without a `.git` folder, so the `secrets` history check
+has nothing to read. None of the 16 findings needs it. The eval checks that each real project is unchanged by reading
+only HEAD, its refs and its worktree list, never `git status` (it reads the working tree, D10). A run with no valid
+report counts as a failed eval, never as zero findings. *(Corrected in PR #20 after review, Oz's decision.)*
 
 **D9. Tests and evals are named for what they are.** `tests/` = pass/fail, in CI on every PR. `evals/` = scores from
 the AI agent, run by hand when the prompt, a tool or the model changes, never in CI (it needs Claude and the

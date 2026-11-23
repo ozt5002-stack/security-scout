@@ -1,12 +1,12 @@
 # Eval: 2026-11-23-after-run-dir-fix
 
-**Recall: 13/16** (target ≥ 13) · **must_pass missed: none** · **false alarms: 2** (target ≤ 2) · **design metric met**
+**Recall: 13/16** (target ≥ 13) · **must_pass missed: none** · **false alarms: 1** (target ≤ 2) · **runs with errors: 0 of 7** · **design metric met**
 
 | Known finding | Must | Found |
 |---|---|---|
 | aa-01 no limit on password guesses (fitbalance-ad-agents) | yes | yes |
-| aa-02 POST accepted from other sites (CSRF) (fitbalance-ad-agents) |  | yes |
-| aa-03 missing HSTS and Permissions-Policy, partial CSP (fitbalance-ad-agents) |  | **no** |
+| aa-02 POST accepted from other sites (CSRF) (fitbalance-ad-agents) |  | **no** |
+| aa-03 missing HSTS and Permissions-Policy, partial CSP (fitbalance-ad-agents) |  | yes |
 | aa-04 yaml 2.6.1 known advisory (fitbalance-ad-agents) |  | yes |
 | aa-05 short APP_PASSWORD only warned about (fitbalance-ad-agents) |  | **no** |
 | aa-06 failed logins not logged (fitbalance-ad-agents) |  | **no** |
@@ -31,6 +31,7 @@
 | yahav-picks @ 0e4ef64 (before) | 5 |  |
 | yahav-picks @ 240e6ad (after) | 2 |  |
 
-False alarms (still reported after the fix): fb-03 no limit on lead submissions (sheet flood, mail quota), yp-03 no CSP or other security headers
+False alarms (still reported after the fix): fb-03 no limit on lead submissions (sheet flood, mail quota)
 
 Real project folders unchanged (status, branches, worktrees): yes
+Rescored on 2026-11-23 from the saved reports with the current known-findings.yaml and matching rule.

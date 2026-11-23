@@ -3,7 +3,8 @@
 # the headers finding counted once per site: fit-balance 5, yahav-picks 4).
 #
 # files: paths in the project; a path ending in / matches anything inside it.
-# keywords: a reported finding must name one of `files` in Where and contain one keyword (case-insensitive).
+# keywords: a reported finding must name one of `files` in Where and contain one keyword as a whole word
+#           (case-insensitive; not inside a longer or hyphenated word). Corrected in PR #20 after review.
 # before / after: the commit with the problem and the commit with the fix (false alarms are counted on `after`).
 
 # --- fitbalance-ad-agents (Node service), fixed in PR #32 ---
@@ -14,7 +15,7 @@
   after: e83756d
   files: [src/server.mjs]
   owasp: A07
-  keywords: [rate limit, brute, guess, lockout, too many, failed attempts, wrong password, unlimited]
+  keywords: [rate limit, rate limiting, rate-limit, brute force, brute-force, guess, guessing, lockout, too many, failed attempts, wrong password, wrong passwords, unlimited]
   must_pass: true
 - id: aa-02
   project: fitbalance-ad-agents
@@ -23,7 +24,7 @@
   after: e83756d
   files: [src/server.mjs]
   owasp: A01
-  keywords: [csrf, cross-site, origin, content-type, text/plain, another site, other site]
+  keywords: [csrf, cross-site, origin, content-type, text/plain, another site, other site, other sites]
   must_pass: false
 - id: aa-03
   project: fitbalance-ad-agents
@@ -50,7 +51,7 @@
   after: e83756d
   files: [src/env.mjs]
   owasp: A07
-  keywords: [short, length, 12 characters, minimum, weak password, warning]
+  keywords: [short, too short, length, 12 characters, minimum, weak password, warning]
   must_pass: false
 - id: aa-06
   project: fitbalance-ad-agents
@@ -59,7 +60,7 @@
   after: e83756d
   files: [src/server.mjs, src/log.mjs]
   owasp: A09
-  keywords: [not logged, logging, log the, audit trail, A09, no record]
+  keywords: [not logged, logging, logged, log, logs, audit trail, A09, no record]
   must_pass: false
 - id: aa-07
   project: fitbalance-ad-agents
@@ -68,7 +69,7 @@
   after: e83756d
   files: [.github/workflows/test.yml]
   owasp: A08
-  keywords: [pin, sha, tag, "@v4", commit hash]
+  keywords: [pin, pinned, sha, tag, tags, "@v4", commit hash]
   must_pass: false
 
 # --- fit-balance (Netlify site + Apps Script form + course), fixed in PR #4 (site) and on PR #3 (course) ---
@@ -79,7 +80,7 @@
   after: e7f6922
   files: [fit-balance-site/apps-script/Code.gs, fit-balance-site/apps-script/]
   owasp: A02
-  keywords: [publish, public, served, download, anyone can, netlify, readable, exposed]
+  keywords: [publish, published, public, publicly, served, download, anyone can, netlify, readable, exposed]
   must_pass: true
 - id: fb-02
   project: fit-balance
@@ -97,7 +98,7 @@
   after: e7f6922
   files: [fit-balance-site/apps-script/Code.gs, apps-script/Code.gs, fit-balance-site/index.html]
   owasp: A06
-  keywords: [rate limit, flood, spam, quota, throttl, unlimited, bot]
+  keywords: [rate limit, rate limiting, rate-limit, flood, flooding, spam, quota, throttle, throttling, unlimited, bot, bots]
   must_pass: false
 - id: fb-04
   project: fit-balance
@@ -106,7 +107,7 @@
   after: e7f6922
   files: [fit-balance-site/, netlify.toml]
   owasp: A02
-  keywords: [header, content-security-policy, csp, x-frame, clickjack, _headers]
+  keywords: [header, headers, content-security-policy, csp, x-frame-options, clickjacking, _headers]
   must_pass: false
 - id: fb-05
   project: fit-balance
@@ -115,7 +116,7 @@
   after: f1d8a49
   files: [course-area/encrypt.mjs, course-area/template.html]
   owasp: A07
-  keywords: [8 characters, length, minimum, offline, brute, guess, weak password, short]
+  keywords: [8 characters, length, minimum, offline, brute force, brute-force, guess, guessing, weak password, short]
   must_pass: false
 
 # --- yahav-picks (GitHub Pages site built from Airtable), fixed in PR #1 ---
@@ -142,9 +143,9 @@
   title: no CSP or other security headers
   before: 0e4ef64
   after: 240e6ad
-  files: [build/templates.mjs, src/, hub/]
+  files: [build/templates.mjs, src/]  # not hub/: the fix never touched hub/links (review of PR #20)
   owasp: A02
-  keywords: [content-security-policy, csp, header, x-frame, clickjack]
+  keywords: [content-security-policy, csp, header, headers, x-frame-options, clickjacking]
   must_pass: false
 - id: yp-04
   project: yahav-picks
@@ -153,5 +154,5 @@
   after: 240e6ad
   files: [.github/workflows/site.yml]
   owasp: A01
-  keywords: [permission, write, contents: write, pin, sha, least privilege]
+  keywords: [permission, permissions, write, contents: write, pin, pinned, sha, least privilege]
   must_pass: false

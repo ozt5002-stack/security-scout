@@ -55,7 +55,19 @@ def candidates(known: Known, finding_wheres: list[str], finding_text: str, root:
     if not any(path_matches(w, f) for w in wheres for f in known.files):
         return False
     text = finding_text.lower()
-    return any(k.lower() in text for k in known.keywords)
+    return any(keyword_in(k, text) for k in known.keywords)
+
+
+def keyword_in(keyword: str, text: str) -> bool:
+    """A whole-word match: not inside a longer word or a hyphenated name (review of PR #20: `content-type` must not
+    match inside `x-content-type-options`)."""
+    word = re.compile(r"[a-z0-9_\-]")
+    kw = keyword.lower()
+    # A boundary is required only on a side where the keyword itself starts or ends with a word character
+    # ("@v4" may follow "checkout"; "content-type" may not follow "x-").
+    before = r"(?<![a-z0-9_\-])" if word.match(kw[:1]) else ""
+    after = r"(?![a-z0-9_\-])" if word.match(kw[-1:]) else ""
+    return re.search(before + re.escape(kw) + after, text.lower()) is not None
 
 
 def match(knowns: list[Known], findings: list[tuple[list[str], str]], root: str = "") -> dict[str, int]:

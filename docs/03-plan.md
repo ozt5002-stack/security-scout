@@ -92,7 +92,7 @@ green.
 
 **Done when:** the matching-rule tests pass in CI; the baseline summary is committed; the final run meets the design's metric (recall >= 13/16, all 5
 `must_pass` found, <= 2 false alarms) or the PR explains honestly where it falls short; the real project folders show
-no changes after the run (`git status` clean, no new worktrees or branches).
+no changes after the run (same HEAD, refs and worktree list; `git status` is never run, D10).
 
 ## 7. Nikto (optional)
 - `scout` never downloads anything (D7). With Oz's OK, recorded in the PR, Nikto is fetched once from
