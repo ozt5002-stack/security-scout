@@ -16,10 +16,14 @@ from pathlib import Path
 from scout.facts import OWASP_2025
 
 SECTIONS = ["Summary", "Findings", "Data inventory", "Accepted risks", "Not checked"]
-FINDING_HEAD = re.compile(r"^### (F-\d{2,})\s*·\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*·\s*(A\d\d)\b\s*(.*)$")
+# Tolerant of small model variations: F-1 or F-01, any case, `·` or a dash or `|` between the parts.
+SEP = r"\s*[·\-–—|]\s*"
+FINDING_HEAD = re.compile(r"^### (F-\d+)" + SEP + r"(CRITICAL|HIGH|MEDIUM|LOW)" + SEP + r"(A\d\d)\b\s*(.*)$", re.I)
+ANY_FINDING_HEAD = re.compile(r"^###\s+F-?\d+", re.I)
 FIELDS = ["What can happen", "Where", "Evidence", "Fix", "Verify"]
-FIELD_LINE = re.compile(r"^\*\*(What can happen|Where|Evidence|Fix|Verify):\*\*\s*(.*)$")
+FIELD_LINE = re.compile(r"^(?:[-*]\s+)?\*\*(What can happen|Where|Evidence|Fix|Verify)(?::\*\*|\*\*:)\s*(.*)$")
 WHERE = re.compile(r"`([^`]+)`")
+LINE_SUFFIX = re.compile(r"(?::\d+(?:[-:]\d+)?|#L\d+(?:-L?\d+)?)$")
 
 
 @dataclass
@@ -31,11 +35,15 @@ class Finding:
     fields: dict[str, str] = field(default_factory=dict)
 
     @property
+    def wheres(self) -> list[str]:
+        """Every path in `Where:` (one or more, each in backticks), without line numbers."""
+        raw = WHERE.findall(self.fields.get("Where", "")) or [self.fields.get("Where", "")]
+        return [LINE_SUFFIX.sub("", w.strip()) for w in raw if w.strip()]
+
+    @property
     def where(self) -> str:
-        """The path in `Where:`, without the line number."""
-        m = WHERE.search(self.fields.get("Where", ""))
-        raw = m.group(1) if m else self.fields.get("Where", "")
-        return re.sub(r":\d+(?:-\d+)?$", "", raw.strip())
+        """The first path in `Where:`."""
+        return (self.wheres or [""])[0]
 
     @property
     def text(self) -> str:
@@ -51,7 +59,7 @@ class Report:
 def parse(text: str) -> Report:
     sections: dict[str, list[str]] = {}
     current = None
-    for line in text.splitlines():
+    for line in text.replace("\r", "").splitlines():
         if line.startswith("## "):
             current = line[3:].strip()
             sections[current] = []
@@ -62,7 +70,7 @@ def parse(text: str) -> Report:
     last_field = None
     for line in "\n".join(sections.get("Findings", [])).splitlines():
         if m := FINDING_HEAD.match(line):
-            f = Finding(m.group(1), m.group(2), m.group(3), m.group(4).strip())
+            f = Finding(m.group(1).upper(), m.group(2).upper(), m.group(3).upper(), m.group(4).strip())
             findings.append(f)
             last_field = None
         elif f and (m := FIELD_LINE.match(line)):
@@ -85,6 +93,10 @@ def check(text: str) -> list[str]:
         elif not report.sections[s]:
             problems.append(f"section '## {s}' is empty (write 'None.' if there is nothing)")
     findings_text = report.sections.get("Findings", "")
+    headings = [ln for ln in findings_text.splitlines() if ANY_FINDING_HEAD.match(ln)]
+    if len(headings) != len(report.findings):
+        problems.append(f"{len(headings)} finding headings but only {len(report.findings)} in the required format "
+                        f"('### F-01 · HIGH · A05 Injection'): the others would be lost")
     if findings_text and not report.findings and "No findings." not in findings_text:
         problems.append("'## Findings' has neither findings in the required format nor 'No findings.'")
     for f in report.findings:

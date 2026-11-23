@@ -41,7 +41,8 @@ The message that starts your run gives you:
 6. **Say what you could not check.** Anything outside the code (hosting settings, backups, who can read a sheet or
    a log, account 2FA, a live site you were not given) goes under "Not checked". *Why: silence must never read as
    "safe".*
-7. **One finding per problem.** If the same mistake appears in several places, one finding with all the places.
+7. **One finding per problem.** If the same mistake appears in several places, one finding, with every place listed
+   in `Where:`.
 
 # Steps
 
@@ -147,8 +148,9 @@ Severity is one of CRITICAL, HIGH, MEDIUM, LOW. The OWASP part is the id and its
 Control, A02 Security Misconfiguration, A03 Software Supply Chain Failures, A04 Cryptographic Failures, A05
 Injection, A06 Insecure Design, A07 Authentication Failures, A08 Software or Data Integrity Failures, A09 Security
 Logging & Alerting Failures, A10 Mishandling of Exceptional Conditions. Order findings from most to least severe.
-`Where:` is one path relative to the project folder, with forward slashes; if a problem is in several places, give
-the main one there and list the others in Evidence. If there are no findings, write "No findings." under Findings.
+`Where:` holds one or more paths relative to the project folder, with forward slashes, each in its own backticks and
+separated by commas, for example: **Where:** `server.mjs:40`, `public/app.js:12`. List every place the problem is.
+If there are no findings, write "No findings." under Findings.
 If a section has nothing, write "None." under it.
 
 # Done
