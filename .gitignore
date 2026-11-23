@@ -16,3 +16,6 @@ tools/
 
 # Per-run facts and raw tool output (outside the scanned project)
 runs/
+
+# Reports of real projects can describe live weaknesses; keep them local unless published on purpose
+reports/
