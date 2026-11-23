@@ -70,3 +70,14 @@ def test_the_workflow_fails_when_nikto_writes_no_output():
     assert 'echo "[]" > nikto.json' not in wf
     assert "Nikto wrote no output" in wf and "exit 1" in wf
     assert "libxml-writer-perl" in wf
+
+
+def test_real_nikto_output_from_the_first_run():
+    """tests/data/nikto-picks.json: the real output of the nikto workflow on picks.fit-balance.co.il
+    (run 45252194198, 2026-11-23, 30 minutes)."""
+    data = json.loads((Path(__file__).parent / "data" / "nikto-picks.json").read_text(encoding="utf-8"))
+    facts = nikto.parse(data)
+    assert len(facts) == 17
+    assert all(f.url.startswith("https://picks.fit-balance.co.il/") for f in facts)
+    missing = [f for f in facts if "Suggested security header missing" in f.evidence]
+    assert len(missing) == 5
