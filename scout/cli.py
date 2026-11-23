@@ -73,5 +73,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.no_agent:
         return 0
-    print("scout: the agent arrives in plan task 5; use --no-agent until then", file=sys.stderr)
+
+    from scout import agent
+    from scout.report import check
+
+    print("scout: the agent is reading the project (a few minutes)...", file=sys.stderr)
+    try:
+        text = agent.run_agent(project, run_dir, facts_path, len(facts), args.live)
+    except agent.AgentUnavailable as e:
+        print(f"scout: no report: {e}. The facts are in {facts_path}", file=sys.stderr)
+        return 3
+    out = agent.save(text, args.out or agent.default_report_path(project))
+    print(f"scout: report -> {out}")
+    for problem in check(text):
+        print(f"scout: report format: {problem}", file=sys.stderr)
     return 0
