@@ -20,11 +20,11 @@ why. Every decision has a number (D1...) so code, reviews and the retrospective 
 
 | Scanner | Looks at | Finds (OWASP 2025) | Runs when |
 |---|---|---|---|
-| `secrets` | every tracked file + the git history (`--all` normally, `HEAD` only in the eval) | keys and passwords in code or history (A04/A07). Shows the first 4 characters only | always |
+| `secrets` | every file + the git history (`--all` normally, `HEAD` only in the eval) | keys and passwords in code or history (A04/A07). Shows the first 4 characters only. A key in a file git does not track (a local `.env`) is an `info` fact for the inventory, not a problem *(PR #16, Oz's decision)* | always |
 | `deps` | `package-lock.json`, `requirements*.txt` | known-vulnerable packages via `npm audit --json` and `pip-audit -r <file> --no-deps --disable-pip` (A03) | the file exists |
 | `bandit` | `*.py` | risky Python patterns via Bandit, with `--ignore-nosec` (A05 and others) | Python files exist |
-| `publish` | every folder that holds an `index.html` (except `node_modules`, `.git`, tests), plus a `netlify.toml` publish folder | non-web files inside it: `.gs .py .sh .sql .env .md .key .pem .bak` and similar (A01/A02); no header config for it: no `_headers`, no `[[headers]]` in `netlify.toml`, no CSP meta in its HTML (A02) | such a folder exists |
-| `ci` | `.github/workflows/*.yml` | write permissions at workflow level, actions pinned to a tag instead of a commit (A01/A08) | workflows exist |
+| `publish` | every folder that holds an `index.html` (except `node_modules`, `.git`, tests), plus a `netlify.toml` publish folder | non-web files inside it: `.gs .py .sh .sql .env .md .key .pem .bak` and similar (A02); no header config for it: no `_headers`, no `[[headers]]` in `netlify.toml`, no CSP meta in its HTML (A02) | such a folder exists |
+| `ci` | `.github/workflows/*.yml` | write permissions at workflow level, no top-level `permissions:` at all, actions pinned to a tag instead of a commit (A01/A08) | workflows exist |
 | `live` | `GET /` and a `HEAD` for a short path list on an allowed host | missing or weak security headers; paths that should not answer 200: `/.env`, `/.git/config`, and every non-web file `publish` found, mapped to its URL (A02) | `--live` and the host is in `targets.yaml` |
 | `nikto` | the allowed host, through Nikto with a pause between requests | Nikto's known risky paths and server issues (A02/A06) | `--nikto` and the host is in `targets.yaml` |
 
@@ -94,7 +94,7 @@ but not counted as findings), and **Not checked**.
   before: 28c63b3                  # commit with the problem
   after: e7f6922                   # commit with the fix
   files: [fit-balance-site/apps-script/Code.gs]   # a list; a folder ending in / matches anything inside it
-  owasp: A01
+  owasp: A02
   keywords: [Code.gs, publish, public]
   must_pass: true
 ```
@@ -159,10 +159,12 @@ private project).
 **D10. Scanning a hostile project must not run its code.** A project can carry its own git config, npm config and
 build scripts. So:
 - git runs as `git --no-pager -c core.fsmonitor=false -c core.hooksPath=<empty folder> -c core.quotepath=off
-  -c protocol.allow=never`, and `log -p` always adds `--no-textconv --no-ext-diff`.
+  -c protocol.allow=never -c log.showSignature=false -c gpg.program=false` (and the ssh/x509 gpg programs), `log`
+  always adds `--no-show-signature`, and `log -p` adds `--no-textconv --no-ext-diff`. *(Signature settings added in
+  PR #16 after review, Oz's decision: a repo's `log.showSignature` + `gpg.program` ran its own script.)*
 - **scout never runs a git command that touches a working tree** (`checkout`, `worktree add`, `status`, `diff`
   against files, `stash`): those apply the repo's own filter drivers (`filter.<name>.smudge/clean/process`), which
-  are commands the repo chooses. It only reads objects: `log`, `ls-tree`, `cat-file`, `rev-parse`. Files of the
+  are commands the repo chooses. It only reads objects or the index: `log`, `ls-tree`, `ls-files`, `cat-file`, `rev-parse`, `rev-list`. Files of the
   current version are read straight from disk. *(Added in PR #15 after review, Oz's decision.)*
 - `npm audit` runs with `--registry=https://registry.npmjs.org/` so a project `.npmrc` cannot redirect it; it reads
   the lockfile and installs nothing.

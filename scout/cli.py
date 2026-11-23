@@ -13,7 +13,7 @@ from pathlib import Path
 
 from scout import targets
 from scout.facts import new_run_dir, write_facts
-from scout.scanners import SCANNERS, Context
+from scout.scanners import Context, code_scanners
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
 
-    project: Path = args.path
+    project: Path = args.path.resolve()
     if not project.is_dir():
         print(f"scout: not a folder: {project}", file=sys.stderr)
         return 1
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
 
     ctx = Context(history=args.history)
     facts = []
-    for _name, scan in SCANNERS:
+    for _name, scan in code_scanners():
         facts.extend(scan(project, ctx))
 
     run_dir = new_run_dir(project)
