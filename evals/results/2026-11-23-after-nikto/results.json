@@ -1,0 +1,312 @@
+{
+  "score": {
+    "recall": 13,
+    "total": 16,
+    "found": [
+      "aa-01",
+      "aa-03",
+      "aa-04",
+      "aa-07",
+      "fb-01",
+      "fb-02",
+      "fb-03",
+      "fb-04",
+      "fb-05",
+      "yp-01",
+      "yp-02",
+      "yp-03",
+      "yp-04"
+    ],
+    "missed": [
+      "aa-02",
+      "aa-05",
+      "aa-06"
+    ],
+    "must_pass_missed": [],
+    "false_alarms": [
+      "fb-03",
+      "yp-03"
+    ]
+  },
+  "runs": [
+    {
+      "project": "fitbalance-ad-agents",
+      "commit": "2ff32bc",
+      "side": "before",
+      "findings": [
+        [
+          [
+            "src/server.mjs",
+            "src/server.mjs",
+            "src/env.mjs"
+          ],
+          "Authentication Failures Anyone who finds the site's address can try passwords against the API as fast as they want. Nothing slows them down and nothing is logged. Once they guess it, they can read every draft and spend your Anthropic and OpenAI/Gemini credit, up to the daily cap. `src/server.mjs:40`, `src/server.mjs:75`, `src/env.mjs:49` `if (!authorized(req.headers.authorization)) return send(res, 401, { error: 'Wrong or missing password.' });` has no counter, delay or log line. The length check in `src/env.mjs` only warns: `else if (config.appPassword.length < 12) warnings.push('APP_PASSWORD is shorter than 12 characters. Use a longer one.');` In `route()`, keep an in-memory map of failed attempts per IP (`req.socket.remoteAddress`, or the first `x-forwarded-for` entry behind Railway or Caddy). After about 10 failures in 15 minutes, answer `429` for that IP. Also call `warn(\\`failed login from ${ip}\\`)` on every 401. In `checkConfig()`, move the \"shorter than 12 characters\" case from `warnings` to `fatal`, so the server will not start with a short password. Send 15 requests in a row with a wrong password: `curl -u x:wrong https://<app>/api/info`. The later ones should get `429`, and the server log should show a `failed login` line for each. Start the server with an 8-character `APP_PASSWORD`: it should exit."
+        ],
+        [
+          [
+            "src/server.mjs",
+            "deploy/Caddyfile"
+          ],
+          "Security Misconfiguration Without HSTS, a browser on hostile Wi-Fi can be pushed to the plain-HTTP version of the site the first time it connects, and the password can be read there. Without Permissions-Policy, the page does not switch off browser features it never uses, such as camera, microphone and location. `src/server.mjs:29`, `deploy/Caddyfile:2` `const SECURITY_HEADERS = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY', 'content-security-policy': ... }`. There is no `strict-transport-security` or `permissions-policy`, and the Caddyfile has no `header` block. Add two entries to `SECURITY_HEADERS`: `'strict-transport-security': 'max-age=31536000; includeSubDomains'` and `'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()'`. The Node server sits behind HTTPS on Railway and behind Caddy on the droplet, so sending HSTS from Node works on every host. Run `curl -sI https://<app>/` and check that both headers are in the response."
+        ],
+        [
+          [
+            "package.json",
+            "package-lock.json",
+            "scripts/agents-files.mjs"
+          ],
+          "Software Supply Chain Failures The `yaml` version you use has a known bug: a deeply nested YAML file can crash the parser. Here it only parses your own `agents/*.md` and `environments/*.yaml` on your computer (it is a dev dependency and is not shipped to the server), so the real risk is small. `package.json:31`, `package-lock.json`, `scripts/agents-files.mjs:4` `\"yaml\": \"2.6.1\"`. Scanner: \"yaml 2.0.0 - 2.8.2: yaml is vulnerable to Stack Overflow via deeply nested YAML collections (GHSA-48c2-rrv3-qjmp); fix: yaml 2.9.1\". Run `npm install --save-dev yaml@2.9.1` and commit `package.json` and `package-lock.json`. `npm audit` no longer lists `yaml`, and `npm test` and `npm run agents:plan` still pass."
+        ],
+        [
+          [
+            ".github/workflows/test.yml",
+            ".github/workflows/test.yml"
+          ],
+          "Software or Data Integrity Failures The CI workflow pins its actions to tags. A tag can be moved to different code, and your CI would then run that code without you changing anything. The workflow's token is read-only and it holds no secrets, so the damage is limited. `.github/workflows/test.yml:25`, `.github/workflows/test.yml:26` `- uses: actions/checkout@v4` and `- uses: actions/setup-node@v4` Replace each tag with the full commit SHA of that release and keep the tag as a comment, for example `actions/checkout@<40-char-sha> # v4`. Turn on Dependabot for `github-actions` so the SHAs get updated. Every `uses:` line in the workflow ends in a 40-character SHA, and CI is still green."
+        ],
+        [
+          [
+            "public/app.js",
+            "public/app.js",
+            "public/app.js"
+          ],
+          "Authentication Failures The page saves the actual app password in the browser's `sessionStorage`. If someone ever manages to run their own JavaScript on the page (an XSS bug), it can read the password. The project's protections (a strict CSP and `textContent` everywhere) make that unlikely today. `public/app.js:13`, `public/app.js:74`, `public/app.js:250` `set(v) { try { sessionStorage.setItem(KEY, v); } ...` and `store.set(password);` Keep the password only in the `password` variable in memory and remove the `store.set`/`store.get` calls. The cost is that a page reload asks for the password again. For a stronger fix, add `POST /api/login`, which checks the password once and sets an `HttpOnly; Secure; SameSite=Strict` session cookie. Log in, then run `sessionStorage.getItem('ad-agents-password')` in DevTools: it should return `null`."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "fitbalance-ad-agents",
+      "commit": "e83756d",
+      "side": "after",
+      "findings": [
+        [
+          [
+            "src/ads.mjs",
+            "src/ads.mjs"
+          ],
+          "Insecure Design The \"30 agent runs a day\" spending cap starts from zero every time the service restarts. Every `git push` on Railway restarts it, and so does `Restart=always` on the droplet. So in a busy day, or if the password leaks, more runs can be paid for than the README promises. Only the $3 cap per session still holds. `src/ads.mjs:110`, `src/ads.mjs:112-119` `const runTimes = [];         // start times of runs in the last 24 hours (resets on restart)` Keep `runTimes` in a small JSON file under `config.dataDir`, for example `data/usage.json`. Read it when the server starts, and write it in `admit()` after `runTimes.push(now)`. Do this the same way `saveJob` writes job files. Also set the monthly spend limit in the Anthropic and OpenAI consoles that README section 6 recommends, so a hard cap exists outside the app. Start the server with `MAX_RUNS_PER_DAY=1` and the fake driver (`AD_AGENT_DRIVER=fake`, `IMAGE_PROVIDER=mock`). Create one ad, restart the server and try a second one. It must answer `429` with \"daily limit\"."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "fit-balance",
+      "commit": "28c63b3",
+      "side": "before",
+      "findings": [
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs"
+          ],
+          "Injection Anyone can send a lead whose name or \"difficulty\" starts with `=`, for example `=IMPORTXML(...)` or `=HYPERLINK(...)`. Google Sheets then treats it as a formula: it can load an outside address when the sheet is opened, or show Yahav a misleading clickable link. `fit-balance-site/apps-script/Code.gs:55`, `fit-balance-site/apps-script/Code.gs:57`, `fit-balance-site/apps-script/Code.gs:58`, `fit-balance-site/apps-script/Code.gs:66` `sh.appendRow([new Date(), name, \"'\" + phone, hard, source, 'חדש', '']);`. Only `phone` gets the `'` prefix that forces plain text. `clean_()` removes only `<` and `>`. In `clean_()`, put a `'` in front of any value that starts with one of the risky characters: `const s = String(v || '').replace(/[<>]/g, '').trim().slice(0, max); return /^[=+\\-@\\t\\r]/.test(s) ? \"'\" + s : s;`. Also check `source` against a fixed list (`['אתר','תוכן חינמי']`) and drop anything else. Paste the new code into the Apps Script editor and deploy a new version. Post a test lead with name `=1+1`, for example from `testLead()` with that name. The sheet should show the text `=1+1`, not `2`."
+        ],
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/index.html"
+          ],
+          "Insecure Design The lead endpoint's address is public in the page source and accepts posts from anyone, with no limit. A script can send thousands of fake leads. That fills the sheet, floods Yahav's inbox, and uses up the daily Gmail sending quota, so real leads stop sending alerts. `fit-balance-site/apps-script/Code.gs:49`, `fit-balance-site/apps-script/Code.gs:71`, `fit-balance-site/index.html:816` `function doPost(e) { ... if (p.website) return ok_(); ... MailApp.sendEmail({ to: NOTIFY_EMAIL, ...` The only protection is the honeypot field, which a script simply leaves empty. In `doPost`, keep counters in `CacheService.getScriptCache()`. Count leads per phone number (for example, ignore the same phone twice within 10 minutes). Also keep an overall count: past about 50 leads an hour, still write the row but skip `MailApp.sendEmail`. Once a day, send one summary email instead of one per lead. Send the same phone number 3 times in a row. The sheet should get one row and Yahav one email. Send 60 different test leads. Emails should stop after the cap, while rows still appear."
+        ],
+        [
+          [
+            "course-area/template.html",
+            "course-area/template.html",
+            "course-area/template.html",
+            "course-area/template.html"
+          ],
+          "Authentication Failures \"Remember me\" is checked by default and saves the shared course password as plain text in the browser's storage. Anyone else who uses that device, or any script that runs on the `fit-balance.co.il` domain, can read it and share it. `course-area/template.html:102`, `course-area/template.html:143`, `course-area/template.html:161`, `course-area/template.html:173` `<input type=\"checkbox\" id=\"keep\" checked>`, `var KEEP_KEY = 'fb_course_pw'`, `if (keep) store(KEEP_KEY, pw);` (`store` writes to `localStorage`) Do not store the password. After a successful unlock, derive the key with `extractable: true`, export the raw key (`crypto.subtle.exportKey('raw', key)`) and store that instead. On a later visit, import it and decrypt directly. A stolen copy then opens only this build of the course, not the next one, because a new random salt is made on every build. Remove `checked` from the \"remember me\" box. Then run `node course-area/encrypt.mjs` again to rebuild the course page. Log in with \"remember me\" on. In DevTools → Application → Local Storage, the password must not appear under `fb_course_pw` or any other key. Reloading the page should still open the course."
+        ],
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs"
+          ],
+          "Security Misconfiguration Netlify publishes everything in `fit-balance-site/`, so anyone can download the Apps Script source. It shows Yahav's alert email address, how the lead form is filtered (honeypot, length checks) and the sheet layout. This makes F-01 and F-02 easier to exploit. `fit-balance-site/apps-script/Code.gs` `const NOTIFY_EMAIL = 'yahav.sror27@gmail.com';`. The file sits inside the publish folder (`CLAUDE.md:16`: \"`fit-balance-site/` = **Netlify publish directory**\"). Move the folder to the repo root (`apps-script/Code.gs`), next to `course-area/`, and update the path in `CLAUDE.md:22`. After deploy, opening `https://fit-balance.co.il/apps-script/Code.gs` should return 404."
+        ],
+        [
+          [
+            "fit-balance-site/index.html",
+            "fit-balance-site/course.html",
+            "course-area/template.html"
+          ],
+          "Security Misconfiguration The site sends none of the standard security headers. Other sites can embed it in a frame (clickjacking), and nothing in the browser limits damage if a bad script ever reaches the pages, including the course page that holds the password. `fit-balance-site/index.html`, `fit-balance-site/course.html`, `course-area/template.html` No `netlify.toml`, no `fit-balance-site/_headers` and no `<meta http-equiv=\"Content-Security-Policy\">` exist anywhere in the project. Header settings made in the Netlify web dashboard cannot be seen from here. Add a file `fit-balance-site/_headers` with: `/*` then indented lines `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`. Add a `Content-Security-Policy` that allows only what the pages use: `self`, `fonts.googleapis.com`, `fonts.gstatic.com`, `www.youtube-nocookie.com`, `player.vimeo.com`, `script.google.com`, and `'unsafe-inline'` for the inline scripts and styles until they are moved to files. Test it on a Deploy Preview first. On the Deploy Preview, open DevTools → Network → the document → Response Headers and confirm all six headers are there. Then check that videos, fonts and both forms still work."
+        ],
+        [
+          [
+            "course-area/encrypt.mjs",
+            "course-area/lessons.json",
+            "course-area/lessons.json"
+          ],
+          "Insecure Design All buyers share one course password. Anyone who has it, or who guesses it offline (the encrypted course is a public file and the minimum length is only 8 characters), gets every lesson. The worksheets are open to anyone with the link, so even without the password, one shared link is enough to get them. `course-area/encrypt.mjs:21`, `course-area/lessons.json:3`, `course-area/lessons.json:7` `if (!pw || pw.length < 8)`, `\"Worksheet links are per gate (Google Drive, 'anyone with the link can view')\"` Use a long random password (for example 4 or more random words, 20+ characters), raise the minimum in `encrypt.mjs` to 16, and change it when you suspect it has leaked: rebuild and email current buyers. If this course becomes a meaningful income, move to a hosted course platform or Vimeo showcase with a login per buyer. `node course-area/encrypt.mjs` should refuse a 10-character password, and the password in the Cardcom email should be long and random."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "fit-balance",
+      "commit": "e7f6922",
+      "side": "after",
+      "findings": [
+        [
+          [
+            "apps-script/Code.gs",
+            "apps-script/Code.gs"
+          ],
+          "Insecure Design A bot can send 30 fake leads an hour, each with a different made-up phone number. After that, every real lead that hour is thrown away. The visitor still sees \"thank you\" and no one is told. `apps-script/Code.gs:67`, `apps-script/Code.gs:103` `if (tooMany_(phone)) return ok_();` and `if (count >= 30) return true;`. The rejected lead is not saved and nothing is logged. In `doPost`, when `tooMany_` returns true, do not drop the lead silently. Save it to a second tab (for example \"חסומות\") with `sheetSafe_` applied, but without sending an email. The first time the hourly cap is hit in a given hour, send Yahav one email (\"over 30 leads this hour, check the sheet\"). To send it only once, keep a cache key such as `'alert'+hourKey`. Then a flood costs at most one extra email, and real leads can still be found. Run `testLead` 31 times from the editor with different phone numbers. The 31st should appear in the \"חסומות\" tab, and exactly one alert email should arrive."
+        ],
+        [
+          [
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html"
+          ],
+          "Insecure Design Anyone can open the \"gated\" free PDFs and videos without leaving a name or phone. The real addresses are written in the page, and the gate opens even when sending the lead fails. `fit-balance-site/index.html:431`, `fit-balance-site/index.html:441`, `fit-balance-site/index.html:433`, `fit-balance-site/index.html:436`, `fit-balance-site/index.html:850` `data-href=\"media/guides/fit-balance-3-recipes.pdf\"`, `data-yt=\"3zRcUj_5X5c\"`, `fetch(LEADS_URL,...).finally(open);` This is fine for free marketing content: if that is the intent, write it down in `CLAUDE.md` as an accepted risk. Never use this pattern for anything paid. The paid recipe books and the future course must never go into `fit-balance-site/media/`, because everything there can be downloaded directly. For buyers, use Cardcom delivery or unlisted/private YouTube with a link sent after payment, as planned in \"Open items\". In an incognito window, open `https://fit-balance.co.il/media/guides/` plus each PDF file name directly, and confirm that only free material is there."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "fit-balance",
+      "commit": "f1d8a49",
+      "side": "after",
+      "findings": [
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs"
+          ],
+          "Injection Anyone can send a \"lead\" whose name or text starts with `=`, and Google Sheets runs it as a formula. For example, `=IMPORTXML(...)` or `=HYPERLINK(\"http://evil…\",\"Click\")` turns the sheet into a phishing link, or sends data from other cells to an outside site when Yahav opens it. `fit-balance-site/apps-script/Code.gs:66`, `fit-balance-site/apps-script/Code.gs:85` `sh.appendRow([new Date(), name, \"'\" + phone, hard, source, 'חדש', '']);`. Only `phone` gets the protective `'` prefix. `clean_` only removes `<` and `>`: `.replace(/[<>]/g, '')`. The `hard` and `source` fields come from the caller too. Anyone can POST to the public endpoint directly, not only through the dropdown on the site. In `Code.gs`, add `function cell_(s){ return /^[=+\\-@\\t\\r]/.test(s) ? \"'\" + s : s; }` and write `sh.appendRow([new Date(), cell_(name), \"'\" + phone, cell_(hard), cell_(source), 'חדש', '']);`. Also remove line breaks in `clean_` (`.replace(/[\\r\\n]+/g,' ')`), because `name` also goes into the email subject. Run `testLead()` with `name: '=1+1'`. The cell in the sheet should show the text `=1+1`, not `2`."
+        ],
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/apps-script/Code.gs",
+            "fit-balance-site/index.html"
+          ],
+          "Insecure Design The leads endpoint is public. Its only protection is a honeypot field, which any script can leave empty. A bot can send thousands of fake leads, fill the sheet and send Yahav one email per lead. After the Gmail/MailApp daily quota runs out, `MailApp.sendEmail` fails and real leads arrive with no email alert. `fit-balance-site/apps-script/Code.gs:49`, `fit-balance-site/apps-script/Code.gs:71`, `fit-balance-site/index.html:816` `if (p.website) return ok_();` is the only bot check. Then come `sh.appendRow(...)` and `MailApp.sendEmail({ to: NOTIFY_EMAIL, ...` on every request, with no count or limit. The endpoint URL is published in the page: `var LEADS_URL=\"https://script.google.com/macros/s/AKfy…/exec\"`. At the start of `doPost`, keep a counter in `CacheService.getScriptCache()`, for example a key per hour. Above about 30 leads an hour, still write the row but skip the email, and send one \"too many leads, check the sheet\" alert instead. Before each email, check `MailApp.getRemainingDailyQuota() > 5`. Also reject repeat submissions of the same phone number within 10 minutes, using a cache key with the phone number. From the Apps Script editor, call `doPost` 40 times in a loop with test data. All rows should appear in the sheet, but only about 30 emails plus one alert should arrive."
+        ],
+        [
+          [
+            "course-area/template.html",
+            "course-area/template.html",
+            "course-area/template.html"
+          ],
+          "Authentication Failures The shared course password is saved as plain text in the browser, and \"remember me\" is ticked by default. Anyone who uses the same phone or computer later (family, a shared work PC), or any browser extension, can read the password and pass it on. Every buyer shares that one password. `course-area/template.html:102`, `course-area/template.html:143`, `course-area/template.html:161` `<input type=\"checkbox\" id=\"keep\" checked>`, `var KEEP_KEY = 'fb_course_pw'`, `if (keep) store(KEEP_KEY, pw);` (which calls `localStorage.setItem`). Remove `checked` from the \"remember me\" box. Change its label to say \"only on your personal device\". Better: do not store the password at all. Derive the key as non-extractable (already the case: `false` in `deriveKey`) and save the `CryptoKey` object in IndexedDB. The browser can keep it there and use it, but no script can read it back as text. Then run `node course-area/encrypt.mjs` again so the course page is rebuilt. Log in to `/my-course/`, then open DevTools → Application → Local Storage. There should be no `fb_course_pw` entry."
+        ],
+        [
+          [
+            "fit-balance-site/"
+          ],
+          "Security Misconfiguration The site sends no security headers. Another site can show your pages inside a hidden frame (clickjacking), and if a script injection ever happens, nothing in the browser limits it. `fit-balance-site/` The publish folder has no `_headers` file, the project has no `netlify.toml`, and there is no CSP `<meta>` tag in any HTML file. The scanner fact was confirmed: no server code sends headers, since this is a static Netlify site. Create `fit-balance-site/_headers` with `/*` followed by these lines: `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`, and a CSP. The pages use inline script and style, so the CSP has to allow them: `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https://i.ytimg.com data:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com; connect-src https://script.google.com; frame-ancestors 'none'`. Test the CSP on a Deploy Preview first, because it costs no credits. On the Deploy Preview, open DevTools → Network → the HTML request → Response Headers. All six headers should be there. Then test both forms, the YouTube embeds and the course videos, and check that nothing is blocked in the Console."
+        ],
+        [
+          [
+            "fit-balance-site/apps-script/Code.gs"
+          ],
+          "Security Misconfiguration The source code of the leads script is published on the site, so anyone can download it. It shows Yahav's notification email address, the honeypot field name and the exact checks a bot needs to pass. That makes F-02 easier to exploit. `fit-balance-site/apps-script/Code.gs` The file is inside the Netlify publish folder (`fit-balance-site/`), so it is served at `/apps-script/Code.gs`. It contains `const NOTIFY_EMAIL = 'yaha…'` and `if (p.website) return ok_();`. Move the folder out of the publish folder, to `apps-script/Code.gs` at the repo root. Your own `CLAUDE.md` already describes it as \"reference only, deployed separately in Google\". After the next deploy, `https://fit-balance.co.il/apps-script/Code.gs` should return 404."
+        ],
+        [
+          [
+            "course-area/encrypt.mjs",
+            "course-area/lessons.json",
+            "course-area/lessons.json"
+          ],
+          "Insecure Design All buyers share one course password, and the worksheets are Google Drive files set to \"anyone with the link\". Once one buyer posts the password or a link, anyone can open the whole course and its worksheets. You cannot lock out a single person without changing the password for everyone. `course-area/encrypt.mjs:15`, `course-area/lessons.json:3`, `course-area/lessons.json:7` `encrypt.mjs` encrypts everything with one password (`let pw = process.env.COURSE_PASSWORD;`). `lessons.json` says: \"Worksheet links are per gate (Google Drive, 'anyone with the link can view')\". This is a business decision, not a code bug. At least change the password now and then: run `encrypt.mjs` again and send the new password to current buyers. Keep the Vimeo domain restriction on, which is the part that protects the videos. If the course grows, move to a platform with one login per buyer. After you change the password, the old one should show \"הסיסמה לא נכונה\" on `/my-course/`."
+        ],
+        [
+          [
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html",
+            "fit-balance-site/index.html"
+          ],
+          "Broken Access Control The \"unlock\" box for the free PDFs only hides links in the browser. Anyone can open the PDFs directly without leaving a name or phone number, so the gate collects fewer leads than it seems to. `fit-balance-site/index.html:433`, `fit-balance-site/index.html:443`, `fit-balance-site/index.html:847` `data-href=\"media/guides/fit-balance-3-recipes.pdf\"`, `data-href=\"media/guides/fit-balance-nutrition-guide.pdf\"`. The files sit in the public `media/guides/` folder, and `open()` simply sets `pl.href=pl.dataset.href`. If the gate only needs to be a gentle nudge, you can accept this and note it in `CLAUDE.md`. If not, stop hosting the gated PDFs on the site. Have the Apps Script email the PDF links, or return them only after a valid lead comes in. Open `https://fit-balance.co.il/media/guides/fit-balance-3-recipes.pdf` in a private window. After the change it should not open."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "yahav-picks",
+      "commit": "0e4ef64",
+      "side": "before",
+      "findings": [
+        [
+          [
+            "package.json",
+            "package-lock.json",
+            "build/images.mjs",
+            "build/images.mjs",
+            "build/images.mjs"
+          ],
+          "Software Supply Chain Failures A specially made image file in Airtable could exploit known holes in the image library (libvips, librsvg, libheif inside `sharp`) during the hourly build. That build holds your Airtable token and a GitHub token that can write to the repo and publish the site. `package.json:11`, `package-lock.json:491`, `build/images.mjs:34`, `build/images.mjs:52`, `build/images.mjs:58` `\"sharp\": \"0.33.5\"`. The npm advisories list several CVEs/GHSAs for `sharp <=0.35.5-rc.1`, with the fix in 0.35.5. `build/images.mjs` calls `sharp(src)` on files downloaded from Airtable attachment URLs (`await fetch(photo.url)`). Set `\"sharp\": \"0.35.5\"` (or later) in `package.json` and run `npm install` so the lock file updates. Commit both files. Also look at `toProduct` in `build/airtable.mjs`: it already keeps only attachments whose type starts with `image/`. Narrow that to `image/jpeg`, `image/png` and `image/webp` so SVG and HEIC files never reach the parser. Run `npm ls sharp`. It should show 0.35.5 or later, and `npm audit` should report no sharp advisory. Then run `npm run preview` and check that the photos still build."
+        ],
+        [
+          [
+            ".github/workflows/site.yml"
+          ],
+          "Broken Access Control The `build` job installs npm packages and parses downloaded images. If anything in that job is compromised, it has a GitHub token that can push code to the repo, publish to Pages and mint deploy credentials. `.github/workflows/site.yml:20` Top-level `permissions: contents: write, pages: write, id-token: write` applies to both jobs. Only `deploy` publishes to Pages and pushes `data/last-hash.txt`. Change the top-level block to `permissions: contents: read`. Then add a block to the `deploy` job only: `permissions: { contents: write, pages: write, id-token: write }`. `build` keeps read-only access, which is enough for checkout, `npm ci` and `upload-pages-artifact`. Open a run in the Actions tab and expand \"Set up job\" → \"GITHUB_TOKEN Permissions\" for each job. `build` should show only `Contents: read`. The site should still deploy, and the hash commit should still be pushed."
+        ],
+        [
+          [
+            "build/templates.mjs",
+            "build/templates.mjs"
+          ],
+          "Injection If a link in Airtable starts with `javascript:` (from a mistake, a shared Airtable form, or someone else with edit access), clicking \"לקנייה\" or the video button on the public site runs that script. `build/templates.mjs:104`, `build/templates.mjs:221` `href=\"${esc(p.link)}\"` and `href=\"${esc(p.reel)}\"`. `esc` escapes HTML characters but does not check the link scheme, so `javascript:` links get through. In `build/airtable.mjs` `toProduct`, keep a link only if `new URL(value).protocol === 'https:'` (wrap it in try/catch) and otherwise set it to `''`. You could also allow only the hosts you expect: `s.click.aliexpress.com` for `link`, and Instagram or TikTok for `reel`. An empty `link` already marks the product as missing (`missingFields`), so it will not go live. In a copy of `data/fixture.json`, set one link field to `javascript:alert(1)` and run `npm run preview`. That product should show \"חסר קישור\" (missing link), with no clickable link."
+        ],
+        [
+          [
+            "build/templates.mjs",
+            "hub/links/index.html"
+          ],
+          "Security Misconfiguration The pages have no Content-Security-Policy and no anti-framing rule. If anything ever gets injected (see F-03), the browser has no second line of defence, and other sites can show your pages inside a frame. `build/templates.mjs:38`, `hub/links/index.html:4` The `<head>` in `page()` contains `<meta charset>`, viewport, OG tags and stylesheet links, but no `http-equiv=\"Content-Security-Policy\"`. The same is true of `hub/links/index.html`. GitHub Pages cannot send custom headers, and there is no `_headers` or `netlify.toml`. In `page()` in `build/templates.mjs`, add after `<meta charset=\"utf-8\">`: `<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; img-src 'self'; style-src 'self'; font-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'\">` and `<meta name=\"referrer\" content=\"strict-origin-when-cross-origin\">`. Notes: - The inline `style=\"position:absolute\"` on the icon SVG at line 23 would be blocked by `style-src 'self'`. Move it into `styles.css`. - For `hub/links/index.html` (which belongs to the main site repo), the policy needs `'unsafe-inline'` for its `<style>` block and the Google Fonts hosts. - `frame-ancestors` and HSTS cannot be set with a meta tag. On GitHub Pages they need a CDN in front (for example Netlify or Cloudflare) if you want them. Build the site, open a product page, and check the browser console for CSP errors. Fonts, photos, search and the \"new\" badge should all still work. Then run the live URL through securityheaders.com."
+        ],
+        [
+          [
+            ".github/workflows/site.yml",
+            ".github/workflows/site.yml",
+            ".github/workflows/site.yml",
+            ".github/workflows/site.yml",
+            ".github/workflows/site.yml",
+            ".github/workflows/site.yml"
+          ],
+          "Software or Data Integrity Failures The workflow uses GitHub Actions by a version tag. If someone moves that tag to malicious code, your workflow runs it automatically with your secrets. `.github/workflows/site.yml:36`, `.github/workflows/site.yml:38`, `.github/workflows/site.yml:46`, `.github/workflows/site.yml:79`, `.github/workflows/site.yml:92`, `.github/workflows/site.yml:96` `uses: actions/checkout@v4`, `actions/setup-node@v4`, `actions/cache@v4`, `actions/upload-pages-artifact@v3`, `actions/deploy-pages@v4` Replace each tag with the full commit SHA of that release, and keep the tag as a comment, for example `uses: actions/checkout@<40-char-sha> # v4`. Turn on Dependabot for `github-actions` so the pinned SHAs stay up to date. `grep \"uses:\" .github/workflows/site.yml` should show a 40-character SHA on every line, and a manual \"Run workflow\" should still succeed."
+        ]
+      ],
+      "error": ""
+    },
+    {
+      "project": "yahav-picks",
+      "commit": "240e6ad",
+      "side": "after",
+      "findings": [
+        [
+          [
+            "hub/links/index.html",
+            "hub/links/index.html",
+            "build/templates.mjs"
+          ],
+          "Security Misconfiguration The bio page has no Content Security Policy or referrer policy. If anyone ever adds a script or third-party content to it, nothing in the browser will limit what that content can do. Today every visitor's IP address is also sent to Google Fonts. `hub/links/index.html:4`, `hub/links/index.html:18`, `build/templates.mjs:44` `hub/links/index.html` has no `Content-Security-Policy` meta tag and loads `<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Assistant...\">` plus an inline `<style>` block. The generated picks pages have a CSP (`build/templates.mjs:36`) but no `<meta name=\"referrer\" ...>`. In `hub/links/index.html`, which belongs in the main site repo (`fit-balance-site/links/index.html`): - Host the Assistant and Bellefair fonts on the site itself, as `src/fonts/` does here. - Move the `<style>` block into a `.css` file. - Add `<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; upgrade-insecure-requests\">` and `<meta name=\"referrer\" content=\"strict-origin-when-cross-origin\">`. In `build/templates.mjs`, add the same referrer meta right after the CSP meta on line 45. Open both pages, then open DevTools → Console and Network. There should be no CSP errors and no requests to `fonts.googleapis.com` or `fonts.gstatic.com`. View the page source and confirm both meta tags are there."
+        ],
+        [
+          [
+            "build/airtable.mjs",
+            "build/templates.mjs",
+            "build/templates.mjs",
+            "build/templates.mjs",
+            "build/templates.mjs",
+            "build/templates.mjs",
+            "build/templates.mjs",
+            "build/build.mjs"
+          ],
+          "Injection If the \"number\" field in Airtable ever holds text instead of a number, for example after a field-type change or a mistake by someone with edit access, that text goes into the page as raw HTML (a script) and into the output file path (so files could be written outside `dist/`). `build/airtable.mjs:58`, `build/templates.mjs:17`, `build/templates.mjs:132`, `build/templates.mjs:136`, `build/templates.mjs:139`, `build/templates.mjs:219`, `build/templates.mjs:221`, `build/build.mjs:75` `code: f[F.code],` is taken without a check. It is then used unescaped in `<span class=\"num\">${p.code}</span>` and in `export const productPath = (p) => \\`${p.code}/\\`;`, which feeds `write(productPath(p) + 'index.html', ...)`. In `toProduct` (`build/airtable.mjs:58`), use `code: Number.isInteger(f[F.code]) && f[F.code] > 0 ? f[F.code] : null,`. The existing filter `p.name && p.code` in `build/build.mjs:41` then drops any bad row. Copy `data/fixture.json`, set one record's `fldyLtURMuIeDAkWU` to `\"<b>x</b>\"` and another's to `\"../../x\"`, and run `node build/build.mjs --fixture <copy> --drafts`. Neither product should appear, and nothing should be written outside `dist/`."
+        ]
+      ],
+      "error": ""
+    }
+  ]
+}
