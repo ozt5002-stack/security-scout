@@ -153,12 +153,14 @@ case the agent quoted a key.
 **D7. Nikto runs in GitHub Actions, from its official repo at a fixed commit.** *(Changed in PR #21, Oz's decision:
 the first plan fetched it to `tools/nikto` on this computer, and Windows Defender deleted `nikto.pl` at once as a
 "hacking tool". Scout does not try to get around the antivirus.)* The `nikto` workflow (`.github/workflows/nikto.yml`)
-runs on a GitHub Linux runner: started by hand (Actions -> nikto -> Run workflow) and once on a pull request that
-changes it. It checks the target with `python -m scout.targets <url>` before fetching anything (D5), fetches
+runs on a GitHub Linux runner, started only by hand (Actions -> nikto -> Run workflow) by someone with write access;
+no pull request can start it. It checks the target with `python -m scout.targets <url>` before fetching anything
+(D5): the check refuses commas, spaces and control characters (Nikto reads commas as more hosts) and prints the URL
+rebuilt from its parsed parts, and only that clean URL reaches Nikto, through a step output. It then fetches
 github.com/sullo/nikto at a pinned commit, runs it with `-Pause 1`, a 30-minute limit and no prompts, turns its JSON
 into facts (`python -m scout.scanners.nikto parse`), and keeps both as a run artifact and in the job summary. The
-target reaches the scripts only through an environment variable (no command injection), and the job can only read
-the repo. On this computer `scout --nikto` says where Nikto runs and exits with code 3.
+raw input reaches the check only through an environment variable (no command injection), and the job can only read
+the repo. *(Allowlist hardening and the manual-only trigger: PR #21 after review, Oz's decision.)* On this computer `scout --nikto` says where Nikto runs and exits with code 3.
 
 **D8. Evals on real history, code only.** The ground truth is the 16 findings of the manual review. Each run writes one
 project at one commit into a temporary folder by reading git's objects directly (`git ls-tree -r` lists the files,

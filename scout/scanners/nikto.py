@@ -44,7 +44,10 @@ def parse(data) -> list[Fact]:
     for h in hosts:
         if not isinstance(h, dict):
             continue
-        base = f"http{'s' if str(h.get('port')) == '443' else ''}://{h.get('host', '')}"
+        https = bool(h.get("ssl_info")) or str(h.get("port")) == "443"
+        port = str(h.get("port") or "")
+        default = (https and port == "443") or (not https and port == "80") or not port
+        base = f"http{'s' if https else ''}://{h.get('host', '')}{'' if default else ':' + port}"
         for v in h.get("vulnerabilities", []) or []:
             msg = str(v.get("msg", "")).strip()
             if not msg:

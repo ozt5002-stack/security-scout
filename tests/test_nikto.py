@@ -61,6 +61,7 @@ def test_the_workflow_checks_the_allowlist_before_fetching_nikto_and_never_inlin
 def test_targets_cli(capsys):
     from scout.targets import main
     assert main(["https://picks.fit-balance.co.il/"]) == 0
+    assert capsys.readouterr().out.strip() == "https://picks.fit-balance.co.il/"
     assert main(["https://example.com/"]) == 2
 
 
@@ -81,3 +82,50 @@ def test_real_nikto_output_from_the_first_run():
     assert all(f.url.startswith("https://picks.fit-balance.co.il/") for f in facts)
     missing = [f for f in facts if "Suggested security header missing" in f.evidence]
     assert len(missing) == 5
+
+
+# --- review of PR #21: Nikto must never be steered to another host ---
+
+import pytest  # noqa: E402
+
+from scout.targets import NotAllowed, check_url, clean_url  # noqa: E402
+
+PICKS = "https://picks.fit-balance.co.il/"
+
+
+@pytest.mark.parametrize("url", [
+    PICKS + ",https://evil.test/",                 # Nikto splits -h on commas
+    "https://picks.fit-balance.co.il:443,evil.test/",
+    PICKS + " evil.test",                          # Nikto strips spaces
+    PICKS + "\nBASH_ENV=/tmp/x",                   # a newline would set variables in $GITHUB_ENV
+    PICKS + "\r",
+    "https://picks.fit-balance.co.il;evil.test/",
+    "https://picks.fit-balance.co.il:abc/",
+])
+def test_inputs_that_could_reach_another_host_are_refused(url):
+    with pytest.raises(NotAllowed):
+        check_url(url)
+
+
+def test_tools_get_a_url_rebuilt_from_its_parts():
+    assert clean_url("HTTPS://Picks.Fit-Balance.co.il") == PICKS
+    assert clean_url("https://picks.fit-balance.co.il:8443/a b".replace(" ", "")) == "https://picks.fit-balance.co.il:8443/ab"
+    assert clean_url("https://picks.fit-balance.co.il/x?y=1#z") == "https://picks.fit-balance.co.il/x"
+
+
+def test_the_workflow_runs_only_by_hand_and_passes_only_the_clean_url():
+    wf_text = (ROOT / ".github" / "workflows" / "nikto.yml").read_text(encoding="utf-8")
+    wf = yaml.safe_load(wf_text)
+    triggers = wf.get(True) or wf.get("on")  # PyYAML reads the key `on` as True
+    assert list(triggers) == ["workflow_dispatch"]
+    assert "GITHUB_ENV" not in "".join(s.get("run", "") for s in wf["jobs"]["nikto"]["steps"])
+    nikto_step = next(s for s in wf["jobs"]["nikto"]["steps"] if s.get("name", "").startswith("Run Nikto"))
+    assert nikto_step["env"]["TARGET"] == "${{ steps.target.outputs.url }}"
+
+
+def test_parser_reads_https_from_ssl_info_and_keeps_a_non_default_port():
+    h = {"host": "x.test", "port": 8443, "ssl_info": {"cn": "x.test"},
+         "vulnerabilities": [{"id": "1", "url": "/a", "msg": "m"}]}
+    assert nikto.parse(h)[0].url == "https://x.test:8443/a"
+    h = {"host": "x.test", "port": "80", "vulnerabilities": [{"id": "1", "url": "/a", "msg": "m"}]}
+    assert nikto.parse(h)[0].url == "http://x.test/a"

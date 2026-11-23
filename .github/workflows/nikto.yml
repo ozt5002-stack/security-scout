@@ -1,9 +1,10 @@
 name: nikto
 
 # Nikto runs here, on a GitHub (Linux) runner, because Windows Defender deletes it on Oz's computer
-# (architecture D7, Oz's decision in PR #21). It is started by hand (Actions -> nikto -> Run workflow), and once on a
-# pull request that changes this file or the Nikto scanner, so a change to it is tested.
-# Only hosts in targets.yaml are scanned (D5): the check runs before Nikto is fetched.
+# (architecture D7, Oz's decision in PR #21). It is started only by hand (Actions -> nikto -> Run workflow), by someone
+# with write access to this repo; no pull request can start it.
+# Only hosts in targets.yaml are scanned (D5): the check runs before Nikto is fetched, and Nikto receives only the URL
+# rebuilt by that check, never the raw input.
 on:
   workflow_dispatch:
     inputs:
@@ -11,10 +12,6 @@ on:
         description: Site to scan (its host must be in targets.yaml)
         required: true
         default: https://picks.fit-balance.co.il/
-  pull_request:
-    paths:
-      - .github/workflows/nikto.yml
-      - scout/scanners/nikto.py
 
 permissions:
   contents: read
@@ -38,14 +35,19 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
 
-      # The target comes from a form field: it is passed through an environment variable, never pasted into the
-      # script, so it cannot inject shell commands.
+      # The raw target comes from a form field: it reaches the script only through an environment variable (no
+      # command injection). The check refuses commas, spaces and control characters, and prints the URL rebuilt from
+      # its parsed parts; only that clean URL is passed on (a step output), so the raw value never reaches Nikto or
+      # $GITHUB_ENV.
       - name: Check the target against the allowlist
+        id: target
+        shell: bash
         env:
-          TARGET: ${{ inputs.target || env.DEFAULT_TARGET }}
+          RAW_TARGET: ${{ inputs.target || env.DEFAULT_TARGET }}
         run: |
-          python -m scout.targets "$TARGET"
-          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+          url="$(python -m scout.targets "$RAW_TARGET")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "allowed: $url"
 
       - name: Fetch Nikto at the pinned commit
         shell: bash  # -eo pipefail: a failing command fails the step
@@ -56,6 +58,8 @@ jobs:
           perl nikto/program/nikto.pl -Version
 
       - name: Run Nikto (1 s pause between requests, 30 min limit)
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
         run: |
           python - <<'EOF'
           import os, subprocess
@@ -68,6 +72,8 @@ jobs:
           if [ ! -s nikto.json ]; then echo "::error::Nikto wrote no output"; exit 1; fi
 
       - name: Turn Nikto's output into facts
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
         run: |
           python -m scout.scanners.nikto parse nikto.json > facts.json
           python - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
