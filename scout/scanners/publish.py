@@ -31,19 +31,25 @@ CSP_META = re.compile(r"""http-equiv\s*=\s*["']?Content-Security-Policy""", re.I
 
 
 def _netlify(project: Path) -> tuple[Path | None, bool]:
+    """(publish folder, has [[headers]]) from netlify.toml. A publish folder outside the project is ignored (D10)."""
     f = project / "netlify.toml"
-    if not f.is_file():
+    if not f.is_file() or f.is_symlink():
         return None, False
     try:
         data = tomllib.loads(f.read_text(encoding="utf-8"))
-    except (tomllib.TOMLDecodeError, OSError):
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
         return None, False
     publish = (data.get("build") or {}).get("publish")
-    folder = (project / publish).resolve() if publish else None
+    folder = None
+    if isinstance(publish, str) and publish:
+        candidate = (project / publish).resolve()
+        if candidate == project or project in candidate.parents:
+            folder = candidate
     return folder, bool(data.get("headers"))
 
 
 def publish_folders(project: Path) -> list[Path]:
+    project = project.resolve()
     found = {p.parent for p in walk(project, SKIP) if p.name.lower() == "index.html"}
     netlify_folder, _ = _netlify(project)
     if netlify_folder and netlify_folder.is_dir():
@@ -64,6 +70,7 @@ def _has_header_config(project: Path, folder: Path) -> bool:
 
 
 def scan(project: Path, ctx: Context) -> list[Fact]:
+    project = project.resolve()  # one form of the path (Windows short names like E40C~1, or ".")
     facts: list[Fact] = []
     for folder in publish_folders(project):
         folder_rel = rel(project, folder) + "/" if folder != project else "./"

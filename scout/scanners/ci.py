@@ -36,9 +36,11 @@ def _uses(node):
 
 
 def scan(project: Path, ctx: Context) -> list[Fact]:
+    project = project.resolve()
     facts: list[Fact] = []
     wf_dir = project / ".github" / "workflows"
-    if not wf_dir.is_dir():
+    # Symlinked folders are not followed (D10): they could point outside the project.
+    if not wf_dir.is_dir() or (project / ".github").is_symlink() or wf_dir.is_symlink():
         return facts
     for f in sorted([*wf_dir.glob("*.yml"), *wf_dir.glob("*.yaml")]):
         if f.is_symlink():

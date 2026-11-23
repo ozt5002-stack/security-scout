@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
 
-    project: Path = args.path
+    project: Path = args.path.resolve()
     if not project.is_dir():
         print(f"scout: not a folder: {project}", file=sys.stderr)
         return 1

@@ -46,6 +46,11 @@ def git_safe_options() -> list[str]:
         "-c", f"core.hooksPath={empty_hooks_dir().as_posix()}",
         "-c", "core.quotepath=off",
         "-c", "protocol.allow=never",
+        # A repo setting log.showSignature=true makes `log` run the repo's gpg.program on signed commits.
+        "-c", "log.showSignature=false",
+        "-c", "gpg.program=false",
+        "-c", "gpg.ssh.program=false",
+        "-c", "gpg.x509.program=false",
     ]
 
 
@@ -93,6 +98,8 @@ def git(args: list[str], cwd: Path, timeout: int = DEFAULT_TIMEOUT) -> subproces
     """git with the hardened options, read-only subcommands only. `log -p` gets --no-textconv --no-ext-diff."""
     if not args or args[0] not in GIT_READ_ONLY:
         raise ValueError(f"scout only runs read-only git commands {sorted(GIT_READ_ONLY)}, not {args[:1]}")
-    if args[0] == "log" and any(a in ("-p", "--patch") for a in args):
-        args = [args[0], "--no-textconv", "--no-ext-diff", *args[1:]]
+    if args[0] == "log":
+        args = [args[0], "--no-show-signature", *args[1:]]
+        if any(a in ("-p", "--patch") for a in args):
+            args = [args[0], "--no-textconv", "--no-ext-diff", *args[1:]]
     return run(["git", *git_safe_options(), *args], cwd=cwd, timeout=timeout)
