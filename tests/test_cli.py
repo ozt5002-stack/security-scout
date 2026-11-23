@@ -78,3 +78,17 @@ def test_fact_rejects_bad_values():
 def test_run_refuses_shell_strings():
     with pytest.raises(TypeError):
         run("git status")  # type: ignore[arg-type]
+
+
+def test_run_folder_is_a_full_path_never_a_windows_short_name(tmp_path):
+    """The eval baseline found the agent could not read facts.json when its folder was given by a short name (E40C~1)."""
+    from scout.facts import new_run_dir
+    import os
+    short = os.environ.get("TEMP", str(tmp_path))  # on Windows TEMP is often the short form
+    run_dir = new_run_dir(EMPTY, root=Path(short) / "scout-test-runs")
+    try:
+        assert run_dir == run_dir.resolve()
+        assert "~" not in str(run_dir)
+    finally:
+        import shutil
+        shutil.rmtree(run_dir.parent, ignore_errors=True)

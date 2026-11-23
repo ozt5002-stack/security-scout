@@ -1,0 +1,158 @@
+# The 16 findings of the manual review of 18-22 November 2026 (the eval's ground truth, design "Success metric").
+# Sources: fitbalance-ad-agents/docs/07-security-review.md (7) and fit-balance/docs/security-review.md (8 findings,
+# the headers finding counted once per site: fit-balance 5, yahav-picks 4).
+#
+# files: paths in the project; a path ending in / matches anything inside it.
+# keywords: a reported finding must name one of `files` in Where and contain one keyword as a whole word
+#           (case-insensitive; not inside a longer or hyphenated word). Corrected in PR #20 after review.
+# before / after: the commit with the problem and the commit with the fix (false alarms are counted on `after`).
+
+# --- fitbalance-ad-agents (Node service), fixed in PR #32 ---
+- id: aa-01
+  project: fitbalance-ad-agents
+  title: no limit on password guesses
+  before: 2ff32bc
+  after: e83756d
+  files: [src/server.mjs]
+  owasp: A07
+  keywords: [rate limit, rate limiting, rate-limit, brute force, brute-force, guess, guessing, lockout, too many, failed attempts, wrong password, wrong passwords, unlimited]
+  must_pass: true
+- id: aa-02
+  project: fitbalance-ad-agents
+  title: POST accepted from other sites (CSRF)
+  before: 2ff32bc
+  after: e83756d
+  files: [src/server.mjs]
+  owasp: A01
+  keywords: [csrf, cross-site, origin, content-type, text/plain, another site, other site, other sites]
+  must_pass: false
+- id: aa-03
+  project: fitbalance-ad-agents
+  title: missing HSTS and Permissions-Policy, partial CSP
+  before: 2ff32bc
+  after: e83756d
+  files: [src/server.mjs]
+  owasp: A02
+  keywords: [hsts, strict-transport, permissions-policy, object-src, base-uri, form-action]
+  must_pass: false
+- id: aa-04
+  project: fitbalance-ad-agents
+  title: yaml 2.6.1 known advisory
+  before: 2ff32bc
+  after: e83756d
+  files: [package.json, package-lock.json]
+  owasp: A03
+  keywords: [yaml]
+  must_pass: false
+- id: aa-05
+  project: fitbalance-ad-agents
+  title: short APP_PASSWORD only warned about
+  before: 2ff32bc
+  after: e83756d
+  files: [src/env.mjs]
+  owasp: A07
+  keywords: [short, too short, length, 12 characters, minimum, weak password, warning]
+  must_pass: false
+- id: aa-06
+  project: fitbalance-ad-agents
+  title: failed logins not logged
+  before: 2ff32bc
+  after: e83756d
+  files: [src/server.mjs, src/log.mjs]
+  owasp: A09
+  keywords: [not logged, logging, logged, log, logs, audit trail, A09, no record]
+  must_pass: false
+- id: aa-07
+  project: fitbalance-ad-agents
+  title: CI actions pinned to tags
+  before: 2ff32bc
+  after: e83756d
+  files: [.github/workflows/test.yml]
+  owasp: A08
+  keywords: [pin, pinned, sha, tag, tags, "@v4", commit hash]
+  must_pass: false
+
+# --- fit-balance (Netlify site + Apps Script form + course), fixed in PR #4 (site) and on PR #3 (course) ---
+- id: fb-01
+  project: fit-balance
+  title: Code.gs publicly readable in the publish folder
+  before: 28c63b3
+  after: e7f6922
+  files: [fit-balance-site/apps-script/Code.gs, fit-balance-site/apps-script/]
+  owasp: A02
+  keywords: [publish, published, public, publicly, served, download, anyone can, netlify, readable, exposed]
+  must_pass: true
+- id: fb-02
+  project: fit-balance
+  title: formula injection into the Google Sheet
+  before: 28c63b3
+  after: e7f6922
+  files: [fit-balance-site/apps-script/Code.gs, apps-script/Code.gs]
+  owasp: A05
+  keywords: [formula, spreadsheet, csv injection, importxml, hyperlink, appendrow]
+  must_pass: true
+- id: fb-03
+  project: fit-balance
+  title: no limit on lead submissions (sheet flood, mail quota)
+  before: 28c63b3
+  after: e7f6922
+  files: [fit-balance-site/apps-script/Code.gs, apps-script/Code.gs, fit-balance-site/index.html]
+  owasp: A06
+  keywords: [rate limit, rate limiting, rate-limit, flood, flooding, spam, quota, throttle, throttling, unlimited, bot, bots]
+  must_pass: false
+- id: fb-04
+  project: fit-balance
+  title: no security headers on the main site
+  before: 28c63b3
+  after: e7f6922
+  files: [fit-balance-site/, netlify.toml]
+  owasp: A02
+  keywords: [header, headers, content-security-policy, csp, x-frame-options, clickjacking, _headers]
+  must_pass: false
+- id: fb-05
+  project: fit-balance
+  title: course password minimum 8 (offline guessing)
+  before: 28c63b3
+  after: f1d8a49
+  files: [course-area/encrypt.mjs, course-area/template.html]
+  owasp: A07
+  keywords: [8 characters, length, minimum, offline, brute force, brute-force, guess, guessing, weak password, short]
+  must_pass: false
+
+# --- yahav-picks (GitHub Pages site built from Airtable), fixed in PR #1 ---
+- id: yp-01
+  project: yahav-picks
+  title: "javascript: links from Airtable not blocked"
+  before: 0e4ef64
+  after: 240e6ad
+  files: [build/templates.mjs, build/airtable.mjs]
+  owasp: A05
+  keywords: ["javascript:", url scheme, scheme, protocol, unvalidated link, data:]
+  must_pass: true
+- id: yp-02
+  project: yahav-picks
+  title: sharp high-severity advisory
+  before: 0e4ef64
+  after: 240e6ad
+  files: [package.json, package-lock.json]
+  owasp: A03
+  keywords: [sharp]
+  must_pass: true
+- id: yp-03
+  project: yahav-picks
+  title: no CSP or other security headers
+  before: 0e4ef64
+  after: 240e6ad
+  files: [build/templates.mjs, src/]  # not hub/: the fix never touched hub/links (review of PR #20)
+  owasp: A02
+  keywords: [content-security-policy, csp, header, headers, x-frame-options, clickjacking]
+  must_pass: false
+- id: yp-04
+  project: yahav-picks
+  title: workflow write permissions for every job, actions on tags
+  before: 0e4ef64
+  after: 240e6ad
+  files: [.github/workflows/site.yml]
+  owasp: A01
+  keywords: [permission, permissions, write, contents: write, pin, pinned, sha, least privilege]
+  must_pass: false

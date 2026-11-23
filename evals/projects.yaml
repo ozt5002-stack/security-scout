@@ -1,0 +1,5 @@
+# Where the three projects of the manual review live on Oz's computer (one is private, so the eval runs locally).
+# The eval only reads these repos' git objects; it never checks out, writes or creates branches in them.
+fitbalance-ad-agents: C:/Users/חיים שלי/Downloads/fitbalance-ad-agents
+fit-balance: C:/Users/חיים שלי/Desktop/yahav-sites/fit-balance
+yahav-picks: C:/Users/חיים שלי/Desktop/yahav-sites/yahav-picks

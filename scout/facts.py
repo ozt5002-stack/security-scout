@@ -55,7 +55,9 @@ def new_run_dir(project: Path, root: Path | None = None) -> Path:
     """runs/<project>-<timestamp>/, outside the scanned project. The Windows clock can return the same time twice,
     so a taken name gets a counter (-2, -3, ...) instead of failing."""
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    base = (root or runs_root()) / f"{project.resolve().name}-{stamp}"
+    # resolve(): the full path, never a Windows short name (E40C~1). The agent's folder permissions compare paths, and
+    # a short name for the run folder made the facts file unreadable to it (found by the eval baseline).
+    base = (root or runs_root()).resolve() / f"{project.resolve().name}-{stamp}"
     base.parent.mkdir(parents=True, exist_ok=True)
     for n in range(1, 1000):
         run_dir = base if n == 1 else base.with_name(f"{base.name}-{n}")
