@@ -11,7 +11,8 @@ PR history, the review comments and the audit (`docs/audit.md`).
   merged branches are deleted; nothing was pushed straight to `main` after the bootstrap commit, and GitHub enforces
   it (PR required, green CI required, admins included, merge commits only).
 - Every PR had an independent review before its merge, and every review found something real.
-- The design's success metric was met by the eval (13/16, all `must_pass`, 1 false alarm), without changing the target.
+- The design's success metric was met by the eval, without changing the target: 13/16, all `must_pass`, 1 false
+  alarm after the run-folder fix, and again on the final code (13/16, all `must_pass`, 2 false alarms).
 
 ## What did not go to plan
 
