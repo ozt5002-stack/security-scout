@@ -72,7 +72,7 @@ Add your own sites to `targets.yaml` before using `--live`.
 
 ## Does it work? The eval
 
-The ground truth is a real manual review (18-22 Nov 2026) of three real projects: **16 findings** (7 in a Node
+The ground truth is a real manual review (18-22 Nov 2026) of three real projects ([`docs/manual-review.md`](docs/manual-review.md), in Hebrew: what was found and how it was fixed, with the live sites): **16 findings** (7 in a Node
 service, 5 in a Netlify site with a Google Apps Script form, 4 in a GitHub Pages site built from Airtable).
 `python -m evals.run` writes each project at the commit *before* and *after* its fixes into a temp folder (from git
 objects; the real folders are not touched), runs scout on each (7 runs), and scores the reports with a fixed rule
